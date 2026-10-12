@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 if (Environment.GetEnvironmentVariable("LIBRARY_CONFIG") is { } configPath) builder.Configuration.AddJsonFile(configPath, optional: false);
 var options = builder.Configuration.GetSection("Library").Get<LibraryOptions>() ?? new();
+RestoreReview.Validate(options.DataPath, Environment.GetEnvironmentVariable("LIBRARY_RESTORE_REVIEWED_SHA256"));
 Directory.CreateDirectory(options.DataPath);
 var databasePath = Path.Combine(options.DataPath, "catalog.db");
 builder.Services.AddSingleton(options);
@@ -18,6 +19,8 @@ builder.Services.AddSingleton<IMetadataProvider, SyntheticMetadataProvider>();
 builder.Services.AddSingleton<IMetadataProvider, UnconfiguredMetadataProvider>();
 builder.Services.AddSingleton<MetadataProviders>();
 builder.Services.AddHostedService<JobRunner>();
+builder.Services.AddSingleton<PreservationService>();
+builder.Services.AddHostedService<PreservationScheduler>();
 var app = builder.Build();
 var storage = app.Services.GetRequiredService<Storage>(); storage.ValidateConfiguration();
 using (var scope = app.Services.CreateScope())
@@ -188,6 +191,11 @@ app.MapPost("/api/discs/{id}/commit", async (string id, Catalog db) =>
     var job = await db.Jobs.SingleAsync(x => x.Id == id && x.Type == "disc-plan");
     if (job.Status != "draft") throw new ArgumentException("Plan already committed.");
     var plan = JobRunner.Decode<DiscPlan>(job.Payload);
+    foreach (var entry in plan.Bins.SelectMany(x => x))
+    {
+        var copy = await db.Copies.SingleAsync(x => x.Id == entry.CopyId);
+        if (copy.Sha256 != entry.Sha256 || storage.Observe(copy.RootId, copy.RelativePath) != new FileObservation(copy.Bytes, copy.ModifiedTicks, copy.FileIdentity ?? "")) throw new IOException("Disc preview is stale; create a new preview.");
+    }
     var number = await db.Discs.CountAsync();
     foreach (var bin in plan.Bins) db.Discs.Add(new() { Label = $"LIB-{++number:0000}", CapacityBytes = plan.CapacityBytes, ReserveBytes = plan.ReserveBytes, Manifest = JobRunner.Encode(bin) });
     job.Status = "completed"; db.Audit("disc-plan-approved", job.Id); await db.SaveChangesAsync(); await tx.CommitAsync(); return Results.Ok();
@@ -202,7 +210,7 @@ app.MapPost("/api/discs/{id}/stage", async (string id, RootRequest request, Cata
 {
     if (storage.Root(request.RootId).Role != "staging") throw new ArgumentException("Choose a staging root.");
     if (!await db.Discs.AnyAsync(x => x.Id == id)) throw new ArgumentException("Unknown disc.");
-    await LimitQueue(db); var job = new Operation { Type = "disc-stage", Payload = JobRunner.Encode(new DiscJob(id, request.RootId)) }; db.Jobs.Add(job); await db.SaveChangesAsync(); return Results.Ok(job);
+    await LimitQueue(db); var job = new Operation { Type = "disc-stage", Payload = JobRunner.Encode(new DiscJob(id, request.RootId, BackupDomain.Digest((await db.Discs.SingleAsync(x => x.Id == id)).Manifest))) }; db.Jobs.Add(job); await db.SaveChangesAsync(); return Results.Ok(job);
 });
 app.MapPost("/api/discs/{id}/written", async (string id, Catalog db) =>
 {
@@ -216,12 +224,12 @@ app.MapPost("/api/discs/{id}/written", async (string id, Catalog db) =>
 app.MapPost("/api/discs/{id}/verify", async (string id, RootRequest request, Catalog db) =>
 {
     if (storage.Root(request.RootId).Role != "disc") throw new ArgumentException("Choose a read-only disc mount.");
-    await LimitQueue(db); var job = new Operation { Type = "disc-verify", Payload = JobRunner.Encode(new DiscJob(id, request.RootId)) }; db.Jobs.Add(job); await db.SaveChangesAsync(); return Results.Ok(job);
+    await LimitQueue(db); var job = new Operation { Type = "disc-verify", Payload = JobRunner.Encode(new DiscJob(id, request.RootId, BackupDomain.Digest((await db.Discs.SingleAsync(x => x.Id == id)).Manifest))) }; db.Jobs.Add(job); await db.SaveChangesAsync(); return Results.Ok(job);
 });
 app.MapGet("/api/export", async (Catalog db) =>
 {
     await using var transaction = await db.Database.BeginTransactionAsync();
-    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync(), integrations = await db.Integrations.ToListAsync() }));
+    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync(), integrations = await db.Integrations.ToListAsync(), backupSets = await db.Set<BackupSetRecord>().ToListAsync(), physicalDiscs = await db.Set<BackupPhysicalDisc>().ToListAsync(), backupEvidence = await db.Set<BackupEvidence>().ToListAsync() }));
     await transaction.CommitAsync();
     return Results.File(bytes, "application/json", "library-export.json");
 });
@@ -238,6 +246,8 @@ app.MapGet("/api/backup", async (HttpContext context) =>
     }
     finally { File.Delete(path); } // only the generated catalog backup, never a media file
 });
+app.MapBackups();
+app.MapPreservation();
 app.MapFallbackToFile("index.html");
 app.Run();
 static async Task LimitQueue(Catalog db)

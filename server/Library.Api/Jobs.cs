@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Library.Api;
 
-public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger, IQBitCopyGuard? guard = null) : BackgroundService
+public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger, IQBitCopyGuard? guard = null, IntegrityHooks? hooks = null) : BackgroundService
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static T Decode<T>(string json) => JsonSerializer.Deserialize<T>(json, Json) ?? throw new ArgumentException("Invalid plan.");
@@ -39,6 +39,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             {
                 case "scan": await Scan(job, stop); break;
                 case "copy": await Copy(job, db, stop); break;
+                case "backup-stage": await BackupStaging.Run(job, db, storage, factory, stop); break;
                 case "disc-stage": await StageDisc(job, db, stop); break;
                 case "disc-verify": await VerifyDisc(job, db, stop); break;
                 default: throw new ArgumentException("Unknown job type.");
@@ -50,6 +51,18 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         catch (OperationCanceledException) { job.Status = "cancelled"; job.Error = "Cancelled. Source retained; no completed media was removed."; }
         catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or CryptographicException)
         { job.Status = "failed"; job.Error = ex.Message; logger.LogWarning("Job {Id} failed: {Message}", job.Id, ex.Message); }
+        if (job.Status == "failed" && job.Type == "copy")
+        {
+            var failedPlan = Decode<CopyPlan>(job.Payload);
+            var sourceAsset = await db.Copies.Where(x => x.Id == failedPlan.SourceCopyId).Select(x => x.AssetId).SingleAsync();
+            var known = await db.Copies.SingleOrDefaultAsync(x => x.RootId == failedPlan.TargetRootId && x.RelativePath == failedPlan.TargetPath && x.AssetId == sourceAsset);
+            if (known != null && failedPlan.Hash != null)
+            {
+                db.Audit("copy-verification-invalidated", Encode(new { copyId = known.Id, previousHash = known.Sha256, jobId = job.Id }));
+                known.State = "changed"; known.Sha256 = null;
+                var asset = await db.Assets.FindAsync(sourceAsset); if (asset != null) asset.Sha256 = null;
+            }
+        }
         job.UpdatedUtc = DateTime.UtcNow;
         db.Audit(job.Status, job.Id); await db.SaveChangesAsync(CancellationToken.None);
     }
@@ -149,15 +162,27 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                 }
                 if (Storage.Observe(input) != inputObservation || storage.Fingerprint(source.RootId, source.RelativePath) != before || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed during copy.");
                 using var destination = storage.Read(plan.TargetRootId, temp);
+                var checkedObservation = Storage.Observe(destination);
                 if (await HashChecked(destination, job.Id, stop) != hash) throw new IOException("Destination SHA-256 verification failed.");
                 await CheckCancellation(job.Id, stop);
                 plan = plan with { Hash = hash }; job.Payload = Encode(plan); job.ProgressBytes = plan.Bytes;
                 await db.SaveChangesAsync(stop); // write-ahead checkpoint before atomic publication
+                await Checkpoint("before-publish", plan.TargetRootId, temp);
+                RequireEvidence(plan.TargetRootId, temp, destination, checkedObservation);
                 storage.Publish(plan.TargetRootId, temp, plan.TargetPath);
             }
             catch (OperationCanceledException) when (!stop.IsCancellationRequested) { storage.RemoveTemporaryIfPresent(plan.TargetRootId, temp, job.Id); throw; }
         }
-        var fingerprint = storage.Observe(plan.TargetRootId, plan.TargetPath);
+        // Verify the published path itself. A rename changes ctime, so never attach a
+        // pre-publication hash to a newly observed (possibly unrelated) fingerprint.
+        await Checkpoint("after-publish", plan.TargetRootId, plan.TargetPath);
+        using var published = storage.Read(plan.TargetRootId, plan.TargetPath);
+        var evidence = Storage.Observe(published);
+        if (evidence.Bytes != plan.Bytes || await HashChecked(published, job.Id, stop) != plan.Hash)
+            throw new IOException("Published destination does not match verified content.");
+        await Checkpoint("before-registration", plan.TargetRootId, plan.TargetPath);
+        RequireEvidence(plan.TargetRootId, plan.TargetPath, published, evidence);
+        var fingerprint = evidence;
         if (registered == null)
         {
             registered = new() { AssetId = source.AssetId, RootId = plan.TargetRootId, RelativePath = plan.TargetPath, Role = "library" };
@@ -168,17 +193,30 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         // Only assert a source hash when its fingerprint still matches this plan.
         try
         {
-            source.FileIdentity = storage.Identity(source.RootId, source.RelativePath);
-            source.Sha256 = storage.Fingerprint(source.RootId, source.RelativePath) == (plan.Bytes, plan.ModifiedTicks) && (plan.SourceIdentity == null || storage.Identity(source.RootId, source.RelativePath) == plan.SourceIdentity) ? plan.Hash : null;
+            var sourceEvidence = storage.Observe(source.RootId, source.RelativePath);
+            source.Sha256 = sourceEvidence == new FileObservation(plan.Bytes, plan.ModifiedTicks, plan.SourceIdentity ?? "") ? plan.Hash : null;
+            if (source.Sha256 != null) source.FileIdentity = sourceEvidence.Identity;
         }
         catch (IOException) { source.State = "offline"; source.Sha256 = null; }
         catch (UnauthorizedAccessException) { source.State = "offline"; source.Sha256 = null; }
         await db.SaveChangesAsync(stop);
+        try
+        {
+            await Checkpoint("after-registration", plan.TargetRootId, plan.TargetPath);
+            RequireEvidence(plan.TargetRootId, plan.TargetPath, published, evidence);
+        }
+        catch (IOException)
+        {
+            registered.State = "changed"; registered.Sha256 = null; assetRecord.Sha256 = null;
+            await db.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
     }
     private async Task StageDisc(Operation job, Catalog db, CancellationToken stop)
     {
         var request = Decode<DiscJob>(job.Payload);
         var disc = await db.Discs.SingleAsync(x => x.Id == request.DiscId, stop);
+        if (request.ManifestSha256 == null || request.ManifestSha256 != BackupDomain.Digest(disc.Manifest)) throw new IOException("Stale or unbound disc manifest; queue a new job.");
         if (storage.Root(request.RootId).Role != "staging") throw new ArgumentException("A staging root is required.");
         foreach (var entry in Decode<ManifestEntry[]>(disc.Manifest))
         {
@@ -205,9 +243,12 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                 }
                 output.Flush(true);
             }
-            using (var staged = storage.Read(request.RootId, temp))
-                if (staged.Length != entry.Bytes || await HashChecked(staged, job.Id, stop) != entry.Sha256) throw new IOException("Staged data no longer matches the manifest.");
+            using var staged = storage.Read(request.RootId, temp);
+            var stagedEvidence = Storage.Observe(staged);
+            if (staged.Length != entry.Bytes || await HashChecked(staged, job.Id, stop) != entry.Sha256) throw new IOException("Staged data no longer matches the manifest.");
             await CheckCancellation(job.Id, stop);
+            await Checkpoint("before-stage-publish", request.RootId, temp);
+            RequireEvidence(request.RootId, temp, staged, stagedEvidence);
             storage.Publish(request.RootId, temp, target);
         }
         var manifestPath = disc.Id + "/manifest.json";
@@ -224,30 +265,65 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             using var existing = new StreamReader(storage.Read(request.RootId, manifestPath));
             if (await existing.ReadToEndAsync(stop) != manifest) throw new IOException("Staging manifest collision.");
         }
+        using var sealedManifest = storage.Read(request.RootId, manifestPath);
+        var manifestObservation = Storage.Observe(sealedManifest);
+        using (var reader = new StreamReader(sealedManifest, leaveOpen: true))
+            if (await reader.ReadToEndAsync(stop) != manifest) throw new IOException("Staging manifest changed.");
+        // Recheck the complete set, including files reused by a retry.
+        var evidenceSet = new List<(string Path, FileObservation Observation)>();
+        foreach (var entry in Decode<ManifestEntry[]>(disc.Manifest))
+        {
+            var path = disc.Id + "/" + entry.Path;
+            using var file = storage.Read(request.RootId, path);
+            var observation = Storage.Observe(file);
+            if (observation.Bytes != entry.Bytes || await HashChecked(file, job.Id, stop) != entry.Sha256) throw new IOException("Staged batch changed after publication.");
+            RequireEvidence(request.RootId, path, file, observation);
+            evidenceSet.Add((path, observation));
+        }
+        foreach (var evidence in evidenceSet)
+            if (storage.Observe(request.RootId, evidence.Path) != evidence.Observation) throw new IOException("Staged batch changed during final validation.");
+        RequireEvidence(request.RootId, manifestPath, sealedManifest, manifestObservation);
         db.Audit("disc-staged", disc.Id); // physical disc remains planned until human reports a burn
     }
     private async Task VerifyDisc(Operation job, Catalog db, CancellationToken stop)
     {
         var request = Decode<DiscJob>(job.Payload);
-        if (storage.Root(request.RootId).Role != "disc") throw new ArgumentException("Verification requires a separate read-only mounted disc root.");
         var disc = await db.Discs.SingleAsync(x => x.Id == request.DiscId, stop);
-        if (disc.Status is not ("reported-written" or "read-back-verified")) throw new ArgumentException("Report the disc written before read-back verification.");
-        // A re-verification must not leave a stale verified status after a mismatch.
+        if (disc.Status is not ("reported-written" or "read-back-verified" or "content-checked")) throw new ArgumentException("Report the disc written before checking content.");
         disc.Status = "reported-written";
         foreach (var copy in await db.Copies.Where(x => x.DiscId == disc.Id).ToListAsync(stop)) copy.State = "reported-written";
         await db.SaveChangesAsync(stop);
+        if (request.ManifestSha256 == null || request.ManifestSha256 != BackupDomain.Digest(disc.Manifest)) throw new IOException("Stale or unbound disc manifest; queue a new check.");
+        if (storage.Root(request.RootId).Role != "disc") throw new ArgumentException("Content checking requires a separate read-only root.");
+        var expected = Encode(new { version = 1, disc.Id, disc.Label, disc.CapacityBytes, disc.ReserveBytes, files = Decode<ManifestEntry[]>(disc.Manifest) });
+        using var manifest = storage.Read(request.RootId, "manifest.json");
+        var manifestEvidence = Storage.Observe(manifest);
+        using (var reader = new StreamReader(manifest, leaveOpen: true))
+            if (await reader.ReadToEndAsync(stop) != expected) throw new IOException("Wrong or stale disc manifest.");
+        var observations = new List<(string Path, FileObservation Observation)>();
         foreach (var entry in Decode<ManifestEntry[]>(disc.Manifest))
         {
             await CheckCancellation(job.Id, stop);
             using var file = storage.Read(request.RootId, entry.Path);
+            var observed = Storage.Observe(file);
             if (file.Length != entry.Bytes || await HashChecked(file, job.Id, stop) != entry.Sha256) throw new IOException($"Read-back mismatch: {entry.Path}");
+            RequireEvidence(request.RootId, entry.Path, file, observed);
+            observations.Add((entry.Path, observed));
         }
-        disc.Status = "read-back-verified";
-        foreach (var entry in Decode<ManifestEntry[]>(disc.Manifest))
-        {
-            var copy = await db.Copies.SingleOrDefaultAsync(x => x.DiscId == disc.Id && x.AssetId == entry.AssetId, stop);
-            if (copy != null) copy.State = "read-back-verified";
-        }
+        RequireEvidence(request.RootId, "manifest.json", manifest, manifestEvidence);
+        foreach (var entry in observations)
+            if (storage.Observe(request.RootId, entry.Path) != entry.Observation) throw new IOException("Read-back root changed during verification.");
+        // A configured folder is not proof of an optical read-back. Only signed,
+        // device-backed Windows companion evidence may establish optical verification.
+        disc.Status = "content-checked";
+        foreach (var copy in await db.Copies.Where(x => x.DiscId == disc.Id).ToListAsync(stop)) copy.State = "content-checked";
+        db.Audit("content-checked-not-optical", disc.Id);
+    }
+    private Task Checkpoint(string point, string root, string path) => hooks?.Checkpoint(point, root, path) ?? Task.CompletedTask;
+    private void RequireEvidence(string root, string path, FileStream file, FileObservation evidence)
+    {
+        if (Storage.Observe(file) != evidence || storage.Observe(root, path) != evidence)
+            throw new IOException("File identity or content changed after verification.");
     }
     private async Task<string> HashChecked(Stream stream, string jobId, CancellationToken stop)
     {
@@ -266,9 +342,12 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
     }
     public static async Task<string> Hash(Stream stream, CancellationToken ct = default) => Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
 }
-public record DiscJob(string DiscId, string RootId);
+public record DiscJob(string DiscId, string RootId, string? ManifestSha256 = null);
 public static class StorageExtensions
 {
     public static void RemoveTemporaryIfPresent(this Storage storage, string root, string path, string job)
     { try { storage.RemoveTemporary(root, path, job); } catch (FileNotFoundException) { } }
 }
+
+// Test seam; production has no callbacks.
+public sealed record IntegrityHooks(Func<string, string, string, Task> Checkpoint);

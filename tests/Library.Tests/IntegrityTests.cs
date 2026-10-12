@@ -159,13 +159,14 @@ public sealed class IntegrityTests : IDisposable
             var copy = await db.Copies.SingleAsync(x => x.Role == "library");
             disc = new Disc { Label = "LIB-0001", CapacityBytes = 50_000_000_000, ReserveBytes = 1_000_000_000, Manifest = JobRunner.Encode(new[] { new ManifestEntry(copy.AssetId, copy.Id, copy.RelativePath, copy.Bytes, copy.Sha256!) }) }; db.Discs.Add(disc); await db.SaveChangesAsync();
         }
-        Assert.Equal("completed", (await Run("disc-stage", new DiscJob(disc.Id, "staging"))).Status);
+        Assert.Equal("completed", (await Run("disc-stage", new DiscJob(disc.Id, "staging", BackupDomain.Digest(disc.Manifest)))).Status);
         await using (var db = factory.CreateDbContext()) Assert.Equal("planned", (await db.Discs.SingleAsync()).Status);
         Assert.Equal("failed", (await Run("disc-verify", new DiscJob(disc.Id, "library"))).Status);
         File.Copy(Path.Combine(home, "staging", disc.Id, "Northlight.mkv"), Path.Combine(home, "disc", "Northlight.mkv"));
+        File.Copy(Path.Combine(home, "staging", disc.Id, "manifest.json"), Path.Combine(home, "disc", "manifest.json"));
         await using (var db = factory.CreateDbContext()) { (await db.Discs.SingleAsync()).Status = "reported-written"; await db.SaveChangesAsync(); }
-        Assert.Equal("completed", (await Run("disc-verify", new DiscJob(disc.Id, "disc"))).Status);
-        await using (var db = factory.CreateDbContext()) Assert.Equal("read-back-verified", (await db.Discs.SingleAsync()).Status);
+        Assert.Equal("completed", (await Run("disc-verify", new DiscJob(disc.Id, "disc", BackupDomain.Digest(disc.Manifest)))).Status);
+        await using (var db = factory.CreateDbContext()) Assert.Equal("content-checked", (await db.Discs.SingleAsync()).Status);
     }
     [Fact]
     public void PlexNamingSupportsMovieEditionsAndEpisodes()
@@ -236,7 +237,7 @@ public sealed class IntegrityTests : IDisposable
             db.Discs.Add(disc); await db.SaveChangesAsync();
         }
         await File.WriteAllTextAsync(Path.Combine(home, "disc", plan.TargetPath), "corrupt");
-        var job = await Run("disc-verify", new DiscJob(disc.Id, "disc")); Assert.Equal("failed", job.Status);
+        var job = await Run("disc-verify", new DiscJob(disc.Id, "disc", BackupDomain.Digest(disc.Manifest))); Assert.Equal("failed", job.Status);
         await using var check = factory.CreateDbContext(); Assert.Equal("reported-written", (await check.Discs.SingleAsync()).Status);
     }
     [Fact]
@@ -323,6 +324,57 @@ public sealed class IntegrityTests : IDisposable
         await worker.Run(job.Id, CancellationToken.None);
         Assert.Equal(7, completion.SeenRevision); Assert.Empty(Directory.GetFiles(Path.Combine(home, "library"), "*", SearchOption.AllDirectories));
         await using var verify = factory.CreateDbContext(); Assert.Equal("failed", (await verify.Jobs.SingleAsync(x => x.Id == job.Id)).Status);
+    }
+    [Theory]
+    [InlineData("before-publish")]
+    [InlineData("after-publish")]
+    [InlineData("before-registration")]
+    [InlineData("after-registration")]
+    public async Task ConcurrentReplacementCannotReceiveOldVerification(string point)
+    {
+        var source = await Source(); var plan = Plan(source, "raced.mkv");
+        var job = new Operation { Type = "copy", Payload = JobRunner.Encode(plan) };
+        await using (var db = factory.CreateDbContext()) { db.Jobs.Add(job); await db.SaveChangesAsync(); }
+        var hook = new IntegrityHooks(async (at, root, relative) =>
+        {
+            if (at != point) return;
+            var path = Path.Combine(home, root, relative);
+            var originalTime = File.GetLastWriteTimeUtc(path);
+            await File.WriteAllBytesAsync(path + ".replacement", new byte[source.Bytes]);
+            File.SetLastWriteTimeUtc(path + ".replacement", originalTime);
+            File.Move(path + ".replacement", path, true);
+        });
+        await new JobRunner(factory, storage, NullLogger<JobRunner>.Instance, hooks: hook).Run(job.Id, CancellationToken.None);
+        await using var check = factory.CreateDbContext();
+        Assert.Equal("failed", (await check.Jobs.SingleAsync(x => x.Id == job.Id)).Status);
+        Assert.False(await check.Copies.AnyAsync(x => x.Role == "library" && x.Sha256 != null));
+        Assert.Equal(source.Bytes, new FileInfo(Path.Combine(home, "source", source.RelativePath)).Length);
+    }
+    [Fact]
+    public async Task IdenticalFilesWithWrongManifestCannotPassContentCheck()
+    {
+        var source = await Source(); await Run("copy", Plan(source, "episode.mkv"));
+        Disc disc;
+        await using (var db = factory.CreateDbContext())
+        {
+            var copy = await db.Copies.SingleAsync(x => x.Role == "library");
+            disc = new() { Status = "reported-written", Manifest = JobRunner.Encode(new[] { new ManifestEntry(copy.AssetId, copy.Id, copy.RelativePath, copy.Bytes, copy.Sha256!) }) };
+            db.Discs.Add(disc); await db.SaveChangesAsync();
+        }
+        File.Copy(Path.Combine(home, "library", "episode.mkv"), Path.Combine(home, "disc", "episode.mkv"));
+        await File.WriteAllTextAsync(Path.Combine(home, "disc", "manifest.json"), "{\"id\":\"wrong-disc\"}");
+        Assert.Equal("failed", (await Run("disc-verify", new DiscJob(disc.Id, "disc", BackupDomain.Digest(disc.Manifest)))).Status);
+        await using var check = factory.CreateDbContext(); Assert.Equal("reported-written", (await check.Discs.SingleAsync()).Status);
+    }
+    [Fact]
+    public async Task FailedRecoveryInvalidatesPreviouslyRegisteredHash()
+    {
+        var source = await Source(); var plan = Plan(source, "recover-changed.mkv");
+        var completed = await Run("copy", plan);
+        await File.WriteAllBytesAsync(Path.Combine(home, "library", plan.TargetPath), new byte[source.Bytes]);
+        Assert.Equal("failed", (await Run("copy", JobRunner.Decode<CopyPlan>(completed.Payload))).Status);
+        await using var db = factory.CreateDbContext(); var copy = await db.Copies.SingleAsync(x => x.Role == "library");
+        Assert.Null(copy.Sha256); Assert.Equal("changed", copy.State);
     }
     private sealed class BlockingCopyGuard : IQBitCopyGuard
     {

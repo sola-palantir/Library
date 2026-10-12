@@ -94,6 +94,7 @@ public sealed class Catalog(DbContextOptions<Catalog> options) : DbContext(optio
     public DbSet<IntegrationDocument> Integrations => Set<IntegrationDocument>();
     protected override void OnModelCreating(ModelBuilder b)
     {
+        BackupDomain.Configure(b);
         b.Entity<PhysicalCopy>().HasIndex(x => new { x.RootId, x.RelativePath }).IsUnique();
         b.Entity<Edition>().HasOne<Title>().WithMany().HasForeignKey(x => x.TitleId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<Asset>().HasOne<Edition>().WithMany().HasForeignKey(x => x.EditionId).OnDelete(DeleteBehavior.Restrict);
