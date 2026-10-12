@@ -5,6 +5,7 @@
 - .NET 10 LTS; SDK 10.0.401, ASP.NET runtime and EF Core SQLite 10.0.12. .NET 8/9 are close to their November 2026 support endpoints, so .NET 10 is the appropriate new-service baseline.
 - React 19.3.0, TypeScript 5.9.3, Vite 8.3.4, Node 24. Exact resolved frontend dependencies are in `client/package-lock.json`.
 - Single ASP.NET process serves the production React build and API. SQLite and its WAL reside on a **local persistent Docker volume**, not a Windows media bind mount or SMB share. One process/replica is supported.
+- Schema v5 adds optional persisted phase telemetry to the job journal with an additive, idempotent migration. Existing jobs retain their state and default to no measured progress; telemetry is never verification evidence.
 - Schema v4 adds immutable backup sets, permanent physical-disc identities and append-only evidence, and downgrades legacy folder-based optical claims to content-only evidence. Pre-v4 copy hashes are retained in history but cleared as current evidence because their old publication path did not bind verification tightly enough; create a fresh verified independent copy before new planning. Schema v3 adds non-secret integration configuration documents; the transactional v2→v3 upgrade is additive. Schema v2 adds a persisted file identity (device/inode/ctime). An idempotent transactional v1→v2 upgrade preserves catalog/history and clears legacy verification caches that lack identity evidence. SQLite `user_version` records the version and newer schemas are refused. The upgrade has regression coverage; back up before upgrades and introduce explicit migrations for subsequent changes.
 
 ## Catalog
@@ -60,3 +61,11 @@ Settings offers SQLite online-backup API output and a versioned JSON catalog/his
 ## Read-only client and metadata-provider adapters
 
 See [integrations.md](integrations.md) for enforced protocol versions, bounded snapshots, path mapping, copy-time readiness, credential handling, synthetic provider matching and explicitly deferred Plex status/refresh. The worker retains the immutable configuration revision in each new copy plan. Snapshot checks never replace filesystem fingerprints or destination hashes.
+
+## Job progress and motion
+
+Workers persist measured phase snapshots (`ProgressJson`) separately from pending catalog mutations. Copy bytes, temporary verification, recovered-destination verification and published-destination verification are distinct phases. Backup staging reports the current file and final batch file checks (including the embedded manifest); preservation audits report hash bytes. Scan file counts have no reliable total and remain indeterminate. Legacy jobs without measured telemetry remain indeterminate while active. A phase reaching 100% never substitutes for the journal's completed state or successful hash/identity checks.
+
+Within phases, telemetry is throttled to at most twice per second, with explicit phase boundaries/final measurements. The browser polls every three seconds, so short phases may finish between polls. Queued retries hide old progress until the worker resets it. Network failures freeze activity animation and retain the last received measurement; there are no estimated ETAs, pause controls or fabricated totals. Native optical work is not polled: the UI labels manually imported evidence and its catalog timestamp, with no live drive connection.
+
+Progress bars expose accessible names and measured values only when a denominator exists. Status changes are polite announcements; byte updates are not a live-region stream. Drawer/dialog, selection, notification and completion transitions are brief. Loading skeletons appear only while waiting for catalog data and have no continuous shimmer. `prefers-reduced-motion` disables all animation and transitions. Repeated journal actions are guarded while a request is pending.

@@ -6,18 +6,29 @@ All file operations used invented fixtures in the isolated Library checkout or t
 
 | Check | Command / result |
 | --- | --- |
-| API and preservation suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` — **85 passed** |
+| API and preservation suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` — **88 passed** |
 | Companion simulations | `dotnet test companion/Library.Companion.Tests -c Release --no-restore --nologo` — **38 passed** |
 | Windows companion cross-build | `dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false` — passed |
 | TypeScript / production assets | `npm --prefix client run build` — passed |
 | Formatting | `npm --prefix client run format:check` — passed |
-| Browser suite | `LIBRARY_BASE_URL=http://127.0.0.1:5082 CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` — **6 passed** against the locally published same-origin UI |
+| Browser suite | `LIBRARY_BASE_URL=http://127.0.0.1:5083 CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` — **8 passed** against the locally published same-origin UI |
 | Dependency audit | `npm --prefix client audit --omit=dev --audit-level=high` — zero reported vulnerabilities |
 | Patch whitespace | `git diff --check` — passed |
 
-Five browser workflows use the real API and synthetic filesystem roots. One isolated UI workflow mocks API responses to inject lost-response errors and exercise season scope/approval/mobile behavior. Neither approach constitutes optical-hardware evidence.
+Five browser workflows use the real API and synthetic filesystem roots. Two isolated UI workflows mock API responses to inject lost-response errors and exercise season scope/approval/mobile behavior. A further loading-state check delays only the catalog response. None of these checks constitutes optical-hardware evidence.
 
 The real backup workflow copies two synthetic episodes, declares an expected three-episode season, packs two whole-episode discs, keeps the missing episode visible, approves an immutable backup, retries approval without creating another set, stages both batches, downloads their manifests and refuses unsigned receipt import. The catalog scan/copy/metadata/legacy staging workflow, qBittorrent synthetic contracts, keyboard navigation, reduced motion, mobile layout, cross-origin controls, XML entity refusal and SQLite backup download also pass.
+
+## Progress and animation evidence
+
+The progress scenario injects synthetic phase snapshots into the actual rendered UI to test copy-to-verification transitions, scans without percentages, canceled/queued/restarted/completed states, repeat keyboard activation, refused retries, polling failures, mobile overflow and reduced motion. These mocked snapshots are UI evidence, not observed media or optical activity. A separate delayed-response test verifies temporary loading skeletons with no infinite shimmer. The real API workflow asserts that completed copies persist the published-destination verification phase.
+
+Backend tests cover phase evidence across interrupted publication/recovery, scan counts without a denominator, v4→v5 migration preserving jobs, and telemetry writes that neither commit unrelated pending changes nor overwrite cancellation requests. Existing cancellation, collision, stale-source, hash-binding and failure tests remain in the suite.
+
+- [Rendered progress UI with synthetic injected telemetry](screenshots/job-progress.png)
+- [Completed jobs from actual API synthetic operations](screenshots/jobs-completed.png)
+
+Progress reports are measurements of a phase/current file, not an overall percentage or ETA. The browser polls every three seconds; very short phases can complete between polls. Legacy jobs without measured telemetry remain indeterminate while active. Optical reports are manual imports with recorded timestamps; no live optical connection, progress or hardware action was tested.
 
 ## Preservation and review evidence
 

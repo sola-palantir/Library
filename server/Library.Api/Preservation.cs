@@ -56,6 +56,7 @@ public sealed class PreservationService(IDbContextFactory<Catalog> factory, Stor
         if (copy.Role is not ("source" or "library")) throw new ArgumentException("Offline disc verification requires the optical companion.");
         var job = new Operation { Type = "preservation-audit", Status = "auditing", Payload = JsonSerializer.Serialize(new { copyId, expectedHash = copy.Sha256 }) };
         db.Jobs.Add(job); await db.SaveChangesAsync(ct);
+        var progress = new JobProgress(factory, job);
         var expected = copy.Sha256; string? actual = null, error = null; FileObservation? observation = null; var outcome = "review-required";
         try
         {
@@ -63,13 +64,16 @@ public sealed class PreservationService(IDbContextFactory<Catalog> factory, Stor
             using var file = storage.Read(copy.RootId, copy.RelativePath);
             observation = Storage.Observe(file);
             if (observation.Bytes > maxBytes) throw new IOException("File now exceeds the audit batch byte budget.");
+            await progress.Report("auditing-file", 0, observation.Bytes, null, ct, true);
             using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[1024 * 1024]; long readBytes = 0; int read;
             while ((read = await file.ReadAsync(buffer, ct)) != 0)
             {
                 if (read > maxBytes - readBytes) throw new IOException("File grew beyond the audit batch byte budget.");
                 readBytes += read; hasher.AppendData(buffer, 0, read);
+                await progress.Report("auditing-file", readBytes, observation.Bytes, null, ct);
             }
+            await progress.Report("auditing-file", readBytes, observation.Bytes, null, ct, true);
             actual = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
             if (Storage.Observe(file) != observation || storage.Observe(copy.RootId, copy.RelativePath) != observation) throw new IOException("File changed or was replaced during audit.");
             if (actual != expected) throw new IOException("SHA-256 differs from the recorded expectation.");

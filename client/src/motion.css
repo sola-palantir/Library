@@ -1,0 +1,141 @@
+.jobs-list > .muted {
+  margin: 0;
+  padding: 14px 20px;
+  line-height: 1.6;
+}
+.job-progress {
+  margin: 12px 0;
+}
+.progress-heading {
+  color: #cfdbeb;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.progress-track {
+  height: 6px;
+  background: #253044;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: #6daaff;
+  border-radius: inherit;
+}
+.determinate span {
+  transition: width 450ms ease-out;
+}
+.indeterminate span {
+  width: 28%;
+  opacity: 0.6;
+}
+.is-active .indeterminate span {
+  animation: progress-travel 1.8s ease-in-out infinite alternate;
+}
+.progress-detail {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 16px;
+  margin-top: 7px;
+  color: #9eabc1;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.is-complete .progress-heading {
+  color: #83d6b8;
+}
+.job:has(.is-complete) .job-icon {
+  animation: completion-arrive 280ms ease-out;
+}
+.inspector {
+  animation: inspector-arrive 180ms ease-out;
+}
+dialog[open],
+.selection-bar,
+.alert {
+  animation: surface-arrive 160ms ease-out;
+}
+tbody tr {
+  transition: background-color 140ms ease-out;
+}
+button {
+  transition:
+    background-color 140ms ease-out,
+    border-color 140ms ease-out;
+}
+.catalog-loading {
+  padding: 22px;
+}
+.catalog-loading p {
+  color: #aebacf;
+  font-size: 13px;
+}
+.skeleton-row {
+  height: 40px;
+  margin: 8px 0;
+  border-radius: 7px;
+  background: linear-gradient(
+    90deg,
+    #222e40 0 9%,
+    transparent 9% 12%,
+    #222e40 12% 65%,
+    transparent 65% 70%,
+    #222e40 70%
+  );
+  animation: surface-arrive 180ms ease-out both;
+}
+.reported-evidence {
+  margin: 10px 0;
+  color: #aebacf;
+  font-size: 12px;
+  line-height: 1.6;
+}
+@keyframes progress-travel {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(255%);
+  }
+}
+@keyframes surface-arrive {
+  from {
+    opacity: 0.3;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes inspector-arrive {
+  from {
+    opacity: 0.4;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes completion-arrive {
+  from {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

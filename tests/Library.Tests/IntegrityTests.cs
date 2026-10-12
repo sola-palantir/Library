@@ -37,6 +37,63 @@ public sealed class IntegrityTests : IDisposable
     }
     private CopyPlan Plan(PhysicalCopy copy, string path = "Movies/Northlight (2024)/Northlight (2024).mkv") => new(copy.Id, "library", path, copy.Bytes, copy.ModifiedTicks, SourceIdentity: storage.Identity(copy.RootId, copy.RelativePath));
     [Fact]
+    public async Task ProgressSurvivesRestartAndKeepsCopyVerificationSeparate()
+    {
+        var source = await Source(); var plan = Plan(source);
+        var job = new Operation { Type = "copy", Payload = JobRunner.Encode(plan) };
+        using (var db = factory.CreateDbContext()) { db.Jobs.Add(job); db.SaveChanges(); }
+        using var stop = new CancellationTokenSource();
+        var seen = new List<string>();
+        var hook = new IntegrityHooks(async (point, _, _) => {
+            if (point != "before-publish") return;
+            await using var db = factory.CreateDbContext();
+            var persisted = await db.Jobs.SingleAsync(x => x.Id == job.Id);
+            var progress = System.Text.Json.JsonDocument.Parse(persisted.ProgressJson).RootElement;
+            seen.Add(progress.GetProperty("phase").GetString()!);
+            Assert.Equal(source.Bytes, progress.GetProperty("bytes").GetInt64());
+            Assert.Equal(source.Bytes, progress.GetProperty("totalBytes").GetInt64());
+            Assert.Empty(await db.Copies.Where(x => x.Role == "library").ToArrayAsync());
+            stop.Cancel();
+        });
+        await new JobRunner(factory, storage, NullLogger<JobRunner>.Instance, hooks: hook).Run(job.Id, stop.Token);
+        using (var db = factory.CreateDbContext()) Assert.Equal("running", db.Jobs.Single(x => x.Id == job.Id).Status);
+        await runner.Run(job.Id, CancellationToken.None);
+        using (var db = factory.CreateDbContext())
+        {
+            var completed = db.Jobs.Single(x => x.Id == job.Id);
+            Assert.Equal("completed", completed.Status);
+            Assert.Contains("verifying-published-copy", completed.ProgressJson);
+        }
+        Assert.Equal(new[] { "verifying-staged-copy" }, seen);
+    }
+    [Fact]
+    public async Task ScanCountsFilesWithoutInventingTotalAndMigrationPreservesJob()
+    {
+        await Source();
+        var scan = await Run("scan", "source");
+        var evidence = System.Text.Json.JsonDocument.Parse(scan.ProgressJson).RootElement;
+        Assert.Equal(1, evidence.GetProperty("files").GetInt64());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, evidence.GetProperty("totalBytes").ValueKind);
+        using var db = factory.CreateDbContext();
+        db.Database.ExecuteSqlRaw("ALTER TABLE Jobs DROP COLUMN ProgressJson;");
+        db.Database.ExecuteSqlRaw("PRAGMA user_version = 4;");
+        CatalogSchema.Initialize(db); CatalogSchema.Initialize(db);
+        var retained = db.Jobs.AsNoTracking().Single(x => x.Id == scan.Id);
+        Assert.Equal("{}", retained.ProgressJson); Assert.Equal("completed", retained.Status);
+    }
+    [Fact]
+    public async Task TelemetryDoesNotFlushPendingChangesOrOverwriteCancellation()
+    {
+        using var db = factory.CreateDbContext();
+        var job = new Operation(); db.Jobs.Add(job); db.SaveChanges();
+        job.Status = "completed"; // deliberately uncommitted
+        db.Jobs.Where(x => x.Id == job.Id).ExecuteUpdate(x => x.SetProperty(j => j.CancelRequested, true));
+        await new JobProgress(factory, job).Report("copying", 20, 100, null, CancellationToken.None, true);
+        using var check = factory.CreateDbContext(); var actual = check.Jobs.Single(x => x.Id == job.Id);
+        Assert.Equal("queued", actual.Status); Assert.True(actual.CancelRequested);
+        Assert.Contains("copying", actual.ProgressJson);
+    }
+    [Fact]
     public async Task CopyIsIndependentVerifiedAndPreservesSourceAndSidecars()
     {
         var source = await Source(); var plan = Plan(source);

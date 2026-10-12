@@ -100,8 +100,19 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   const exportResponse = await request.get("/api/export");
   expect(exportResponse.ok()).toBeTruthy();
   const exported = await exportResponse.json();
-  expect(exported.schemaVersion).toBe(4);
+  expect(exported.schemaVersion).toBe(5);
   expect(exported.history.length).toBeGreaterThan(0);
+  const copied = exported.jobs.find(
+    (j: { type: string; status: string }) =>
+      j.type === "copy" && j.status === "completed",
+  );
+  expect(JSON.parse(copied.progressJson).phase).toBe(
+    "verifying-published-copy",
+  );
+  await page.screenshot({
+    path: "../docs/screenshots/jobs-completed.png",
+    fullPage: false,
+  });
   expect(errors).toEqual([]);
 });
 

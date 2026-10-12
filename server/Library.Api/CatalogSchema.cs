@@ -4,7 +4,7 @@ namespace Library.Api;
 
 public static class CatalogSchema
 {
-    public const int Version = 4;
+    public const int Version = 5;
     public static void Initialize(Catalog db)
     {
         db.Database.EnsureCreated();
@@ -22,7 +22,16 @@ public static class CatalogSchema
                 using var reader = command.ExecuteReader();
                 while (reader.Read()) columns.Add(reader.GetString(1));
             }
+            var jobColumns = new List<string>();
+            using (var command = db.Database.GetDbConnection().CreateCommand())
+            {
+                command.CommandText = "PRAGMA table_info('Jobs')";
+                using var reader = command.ExecuteReader();
+                while (reader.Read()) jobColumns.Add(reader.GetString(1));
+            }
             using var transaction = db.Database.BeginTransaction();
+            if (!jobColumns.Contains("ProgressJson"))
+                db.Database.ExecuteSqlRaw("ALTER TABLE Jobs ADD COLUMN ProgressJson TEXT NOT NULL DEFAULT '{{}}';");
             if (!columns.Contains("FileIdentity"))
             {
                 db.Database.ExecuteSqlRaw("ALTER TABLE Copies ADD COLUMN FileIdentity TEXT NULL;");
@@ -42,7 +51,7 @@ public static class CatalogSchema
             }
             db.Database.ExecuteSqlRaw(BackupDomain.SchemaSql);
             db.Database.ExecuteSqlRaw(PreservationService.SchemaSql);
-            db.Database.ExecuteSqlRaw("PRAGMA user_version = 4;");
+            db.Database.ExecuteSqlRaw("PRAGMA user_version = 5;");
             transaction.Commit();
         }
         finally { db.Database.CloseConnection(); }

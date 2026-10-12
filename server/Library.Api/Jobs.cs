@@ -33,6 +33,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         if (job.CancelRequested) { job.Status = "cancelled"; await db.SaveChangesAsync(stop); return; }
         job.Status = "running"; job.Error = null; job.UpdatedUtc = DateTime.UtcNow;
         db.Audit("started", job.Id); await db.SaveChangesAsync(stop);
+        await new JobProgress(factory, job).Report("starting", 0, null, null, stop, true);
         try
         {
             switch (job.Type)
@@ -80,6 +81,8 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         using var rootHandle = storage.OpenRoot(rootId); // offline root fails, never marks entire catalog missing
         await using var db = await factory.CreateDbContextAsync(stop);
         var count = 0;
+        var progress = new JobProgress(factory, job);
+        await progress.Report("scanning", 0, null, 0, stop, true);
         foreach (var path in storage.EnumerateMedia(rootId))
         {
             await CheckCancellation(job.Id, stop);
@@ -108,14 +111,17 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             existing.ScanId = job.Id; existing.State = existing.Role == "library" && existing.Sha256 != null ? "verified" : "online";
             await db.SaveChangesAsync(stop);
             await transaction.CommitAsync(stop);
-            if (++count % 100 == 0) { db.ChangeTracker.Clear(); await Task.Yield(); }
+            await progress.Report("scanning", 0, null, ++count, stop);
+            if (count % 100 == 0) { db.ChangeTracker.Clear(); await Task.Yield(); }
         }
         await db.Copies.Where(x => x.RootId == rootId && x.ScanId != job.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.State, "offline"), stop);
+        await progress.Report("scanning", 0, null, count, stop, true);
         db.Audit("scan-finished", $"{rootId}: {count} media files; no content rehash"); await db.SaveChangesAsync(stop);
     }
     private async Task Copy(Operation job, Catalog db, CancellationToken stop)
     {
         var plan = Decode<CopyPlan>(job.Payload);
+        var progress = new JobProgress(factory, job);
         var source = await db.Copies.SingleAsync(x => x.Id == plan.SourceCopyId, stop);
         if (storage.Root(plan.TargetRootId).Role != "library") throw new ArgumentException("Copies must target a library root.");
         var registered = await db.Copies.SingleOrDefaultAsync(x => x.RootId == plan.TargetRootId && x.RelativePath.ToUpper() == plan.TargetPath.ToUpper(), stop);
@@ -127,7 +133,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         {
             if (plan.Hash == null) throw new IOException("Destination collision. Preview a new path.");
             using var recovered = storage.Read(plan.TargetRootId, plan.TargetPath);
-            if (recovered.Length != plan.Bytes || await HashChecked(recovered, job.Id, stop) != plan.Hash) throw new IOException("Existing destination does not match the journal.");
+            if (recovered.Length != plan.Bytes || await HashChecked(recovered, job.Id, stop, progress, "checking-recovery") != plan.Hash) throw new IOException("Existing destination does not match the journal.");
         }
         else
         {
@@ -146,6 +152,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                 using (var output = storage.Create(plan.TargetRootId, temp))
                 using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
                 {
+                    await progress.Report("copying", 0, plan.Bytes, null, stop, true);
                     var buffer = new byte[1024 * 1024]; long copied = 0; long lastCheckpoint = 0;
                     int read;
                     while ((read = await input.ReadAsync(buffer, stop)) > 0)
@@ -154,7 +161,8 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                         if (copied - lastCheckpoint >= 16 * 1024 * 1024)
                         {
                             await CheckCancellation(job.Id, stop); job.ProgressBytes = copied; job.UpdatedUtc = DateTime.UtcNow;
-                            await db.SaveChangesAsync(stop); lastCheckpoint = copied;
+                            await db.SaveChangesAsync(stop);
+                            await progress.Report("copying", copied, plan.Bytes, null, stop); lastCheckpoint = copied;
                         }
                     }
                     output.Flush(true); hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
@@ -163,7 +171,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                 if (Storage.Observe(input) != inputObservation || storage.Fingerprint(source.RootId, source.RelativePath) != before || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed during copy.");
                 using var destination = storage.Read(plan.TargetRootId, temp);
                 var checkedObservation = Storage.Observe(destination);
-                if (await HashChecked(destination, job.Id, stop) != hash) throw new IOException("Destination SHA-256 verification failed.");
+                if (await HashChecked(destination, job.Id, stop, progress, "verifying-staged-copy") != hash) throw new IOException("Destination SHA-256 verification failed.");
                 await CheckCancellation(job.Id, stop);
                 plan = plan with { Hash = hash }; job.Payload = Encode(plan); job.ProgressBytes = plan.Bytes;
                 await db.SaveChangesAsync(stop); // write-ahead checkpoint before atomic publication
@@ -178,7 +186,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         await Checkpoint("after-publish", plan.TargetRootId, plan.TargetPath);
         using var published = storage.Read(plan.TargetRootId, plan.TargetPath);
         var evidence = Storage.Observe(published);
-        if (evidence.Bytes != plan.Bytes || await HashChecked(published, job.Id, stop) != plan.Hash)
+        if (evidence.Bytes != plan.Bytes || await HashChecked(published, job.Id, stop, progress, "verifying-published-copy") != plan.Hash)
             throw new IOException("Published destination does not match verified content.");
         await Checkpoint("before-registration", plan.TargetRootId, plan.TargetPath);
         RequireEvidence(plan.TargetRootId, plan.TargetPath, published, evidence);
@@ -325,19 +333,21 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         if (Storage.Observe(file) != evidence || storage.Observe(root, path) != evidence)
             throw new IOException("File identity or content changed after verification.");
     }
-    private async Task<string> HashChecked(Stream stream, string jobId, CancellationToken stop)
+    private async Task<string> HashChecked(Stream stream, string jobId, CancellationToken stop, JobProgress? progress = null, string phase = "verifying")
     {
         var observation = stream is FileStream file ? Storage.Observe(file) : null;
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[1024 * 1024]; int read; long checkpoint = 0;
+        var buffer = new byte[1024 * 1024]; int read; long checkpoint = 0, done = 0;
+        if (progress != null) await progress.Report(phase, 0, stream.Length, null, stop, true);
         await CheckCancellation(jobId, stop);
         while ((read = await stream.ReadAsync(buffer, stop)) > 0)
         {
-            hash.AppendData(buffer, 0, read); checkpoint += read;
-            if (checkpoint >= 16 * 1024 * 1024) { await CheckCancellation(jobId, stop); checkpoint = 0; }
+            hash.AppendData(buffer, 0, read); checkpoint += read; done += read;
+            if (checkpoint >= 16 * 1024 * 1024) { await CheckCancellation(jobId, stop); if (progress != null) await progress.Report(phase, done, stream.Length, null, stop); checkpoint = 0; }
         }
         if (stream is FileStream checkedFile && Storage.Observe(checkedFile) != observation) throw new IOException("File changed during verification.");
         await CheckCancellation(jobId, stop);
+        if (progress != null) await progress.Report(phase, done, stream.Length, null, stop, true);
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
     public static async Task<string> Hash(Stream stream, CancellationToken ct = default) => Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();

@@ -55,6 +55,8 @@ export type Job = {
   payload: string;
   error: string | null;
   progressBytes: number;
+  progressJson?: string;
+  updatedUtc?: string;
   cancelRequested: boolean;
   createdUtc: string;
 };

@@ -53,6 +53,7 @@ public sealed class Operation
     public string Payload { get; set; } = "{}";
     public string? Error { get; set; }
     public long ProgressBytes { get; set; }
+    public string ProgressJson { get; set; } = "{}";
     public bool CancelRequested { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;

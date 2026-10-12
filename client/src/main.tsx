@@ -41,6 +41,7 @@ import type {
   Settings,
 } from "./types";
 import "./style.css";
+import { JobProgress } from "./JobProgress";
 import {
   BackupWorkspace,
   CompanionSettings,
@@ -124,6 +125,7 @@ function App() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
+    [pollingFailed, setPollingFailed] = useState(false),
     [inspectorWidth, setInspectorWidth] = useState(310);
   const [targetRoot, setTargetRoot] = useState(""),
     [targetPath, setTargetPath] = useState(""),
@@ -155,6 +157,7 @@ function App() {
       api<typeof summary>("/summary"),
     ]);
     if (version !== loadVersion.current) return;
+    setPollingFailed(false);
     setRows(catalog.items);
     setTotal(catalog.total);
     setSettings(s);
@@ -185,7 +188,10 @@ function App() {
       setError(e.message);
       setLoading(false);
     });
-    const t = setInterval(() => load().catch(() => {}), 3000);
+    const t = setInterval(
+      () => load().catch(() => setPollingFailed(true)),
+      3000,
+    );
     return () => {
       clearInterval(t);
       loadVersion.current++;
@@ -216,7 +222,10 @@ function App() {
       dialogRef.current?.showModal();
     } else dialogRef.current?.close();
   }, [!!modal]);
+  const actionPending = useRef(false);
   async function run(action: () => Promise<void>) {
+    if (actionPending.current) return;
+    actionPending.current = true;
     setBusy(true);
     setError("");
     try {
@@ -225,6 +234,7 @@ function App() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   }
@@ -401,7 +411,21 @@ function App() {
           ))}
         </tbody>
       </table>
-      {!data.length && (
+      {loading && !data.length && (
+        <div
+          className="catalog-loading"
+          role="status"
+          aria-label="Loading catalog"
+        >
+          <p>Loading your catalog…</p>
+          <div aria-hidden="true">
+            {[0, 1, 2, 3].map((n) => (
+              <div className="skeleton-row" key={n} />
+            ))}
+          </div>
+        </div>
+      )}
+      {!loading && !data.length && (
         <div className="empty">
           <Archive size={38} />
           <h3>
@@ -1126,6 +1150,16 @@ function App() {
           )}
           {area === "Jobs" && (
             <section className="jobs-list">
+              {pollingFailed && (
+                <p role="alert" className="alert error">
+                  Job updates unavailable. Showing the last received evidence;
+                  progress animation is stopped. Retrying automatically.
+                </p>
+              )}
+              <p className="muted">
+                Updates every 3 seconds. Bars measure the current phase or file,
+                not overall completion. No ETA is estimated.
+              </p>
               <div className="pane-heading">
                 <Layers3 size={17} />
                 <strong>Operation journal</strong>
@@ -1136,7 +1170,8 @@ function App() {
               {jobs.map((job) => (
                 <article className="job" key={job.id}>
                   <div className={`job-icon ${job.status}`}>
-                    {job.status === "running" ? (
+                    {["running", "auditing"].includes(job.status) &&
+                    !pollingFailed ? (
                       <LoaderCircle size={21} className="spin" />
                     ) : job.status === "completed" ? (
                       <CheckCircle2 size={21} />
@@ -1153,9 +1188,8 @@ function App() {
                     <small>
                       {new Date(job.createdUtc).toLocaleString()} ·{" "}
                       {job.id.slice(0, 8)}{" "}
-                      {job.progressBytes > 0 &&
-                        `· ${bytes(job.progressBytes)} copied`}
                     </small>
+                    <JobProgress job={job} stale={pollingFailed} />
                     {job.error && <p className="job-error">{job.error}</p>}
                     <details>
                       <summary>Plan details</summary>

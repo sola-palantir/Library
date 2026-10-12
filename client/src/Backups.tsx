@@ -620,6 +620,21 @@ export function BackupWorkspace({
                       {evidence[0]?.state ?? "planned"}
                     </span>
                   </header>
+                  <p className="reported-evidence">
+                    {evidence.length ? (
+                      <>
+                        Last recorded evidence:{" "}
+                        <time dateTime={evidence[0].atUtc}>
+                          {new Date(evidence[0].atUtc).toLocaleString()}
+                        </time>
+                        .
+                      </>
+                    ) : (
+                      "No attempt evidence recorded yet."
+                    )}{" "}
+                    Windows CLI reports are imported manually. No live drive
+                    connection or live burn progress is available here.
+                  </p>
                   <div className="backup-actions">
                     <button
                       disabled={busy || !stageRoot}
