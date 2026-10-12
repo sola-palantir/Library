@@ -100,7 +100,7 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   const exportResponse = await request.get("http://127.0.0.1:5080/api/export");
   expect(exportResponse.ok()).toBeTruthy();
   const exported = await exportResponse.json();
-  expect(exported.schemaVersion).toBe(2);
+  expect(exported.schemaVersion).toBe(3);
   expect(exported.history.length).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
@@ -167,4 +167,112 @@ test("API rejects cross-origin mutations, validates XML, and exports a SQLite ba
   expect((await backup.body()).subarray(0, 16).toString()).toBe(
     "SQLite format 3\0",
   );
+});
+
+test("synthetic torrent completion and reviewable metadata matching remain explicit", async ({
+  page,
+  request,
+}) => {
+  const base = "http://127.0.0.1:5080/api";
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("qBittorrent mode").selectOption("synthetic");
+  await page
+    .getByRole("button", { name: "Save qBittorrent configuration" })
+    .click();
+  await expect(
+    page.getByText("Configuration saved. No connection was made."),
+  ).toBeVisible();
+  try {
+    await page.getByRole("button", { name: "Refresh torrent status" }).click();
+    await expect(
+      page
+        .locator(".integration-panel")
+        .getByText("complete · 100%", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator(".integration-panel")
+        .getByText("incomplete · 42%", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/No qBittorrent server was contacted/),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "../docs/screenshots/integrations.png",
+      fullPage: true,
+    });
+    const catalog = await (
+      await request.get(base + "/catalog?role=source")
+    ).json();
+    const incomplete = catalog.items.find(
+      (r: any) => r.title.name === "Paper Moons",
+    );
+    const blocked = await request.post(base + "/copy/preview", {
+      data: {
+        sourceCopyId: incomplete.copy.id,
+        targetRootId: "library",
+        targetPath: `Movies/Blocked-${Date.now()}.mkv`,
+      },
+    });
+    expect(blocked.status()).toBe(409);
+    expect((await blocked.json()).error).toContain("not ready");
+    const complete = catalog.items.find(
+      (r: any) => r.title.name === "Northlight",
+    );
+    const accepted = await request.post(base + "/copy/preview", {
+      data: {
+        sourceCopyId: complete.copy.id,
+        targetRootId: "library",
+        targetPath: `Movies/Ready-${Date.now()}.mkv`,
+      },
+    });
+    expect(accepted.ok()).toBeTruthy();
+    const proposal = await accepted.json();
+    expect(proposal.completion.synthetic).toBe(true);
+    expect(proposal.completion.state).toBe("complete");
+    await page.getByRole("button", { name: "Library", exact: true }).click();
+    await page
+      .getByRole("button", { name: /Northlight/ })
+      .first()
+      .click();
+    await page.getByText("Find a metadata match", { exact: true }).click();
+    await page
+      .getByLabel("Match title", { exact: true })
+      .fill("No such synthetic title");
+    await page
+      .getByRole("button", { name: "Search synthetic metadata" })
+      .click();
+    await expect(page.getByText(/No synthetic matches/)).toBeVisible();
+    await page.getByLabel("Match title", { exact: true }).fill("Northlight");
+    await page
+      .getByRole("button", { name: "Search synthetic metadata" })
+      .click();
+    await page.getByRole("button", { name: "Review match · 2024" }).click();
+    await expect(
+      page.locator("dialog").getByText(/SYNTHETIC MATCH/),
+    ).toBeVisible();
+    const before = await (
+      await request.get(base + "/catalog?role=source&q=Northlight")
+    ).json();
+    expect(before.items[0].title.revision).toBe(complete.title.revision);
+    await page.screenshot({
+      path: "../docs/screenshots/match-preview.png",
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Apply catalog changes" }).click();
+    await expect(
+      page.getByText("Catalog metadata updated. No media paths were changed."),
+    ).toBeVisible();
+    const after = await (
+      await request.get(base + "/catalog?role=source&q=Northlight")
+    ).json();
+    expect(after.items[0].title.revision).toBe(complete.title.revision + 1);
+  } finally {
+    const state = await (await request.get(base + "/integrations/qbit")).json();
+    const reset = await request.put(base + "/integrations/qbit", {
+      data: { ...state.configuration, mode: "disabled" },
+    });
+    expect(reset.ok()).toBeTruthy();
+  }
 });

@@ -12,6 +12,11 @@ var databasePath = Path.Combine(options.DataPath, "catalog.db");
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<Storage>();
 builder.Services.AddDbContextFactory<Catalog>(b => b.UseSqlite($"Data Source={databasePath};Default Timeout=30"));
+builder.Services.AddSingleton<QBitIntegration>();
+builder.Services.AddSingleton<IQBitCopyGuard>(services => services.GetRequiredService<QBitIntegration>());
+builder.Services.AddSingleton<IMetadataProvider, SyntheticMetadataProvider>();
+builder.Services.AddSingleton<IMetadataProvider, UnconfiguredMetadataProvider>();
+builder.Services.AddSingleton<MetadataProviders>();
 builder.Services.AddHostedService<JobRunner>();
 var app = builder.Build();
 var storage = app.Services.GetRequiredService<Storage>(); storage.ValidateConfiguration();
@@ -87,7 +92,7 @@ app.MapPost("/api/jobs/{id}/retry", async (string id, Catalog db) =>
     if (changed == 0) throw new ArgumentException("Job is not retryable.");
     db.Audit("retry-requested", id); await db.SaveChangesAsync(); return Results.Ok();
 });
-app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db) =>
+app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db, IQBitCopyGuard guard, CancellationToken ct) =>
 {
     if (storage.Root(request.TargetRootId).Role != "library") throw new ArgumentException("Choose a library destination.");
     var copy = await db.Copies.SingleAsync(x => x.Id == request.SourceCopyId);
@@ -99,11 +104,12 @@ app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db) =>
     Storage.Components(path);
     if (await db.Copies.AnyAsync(x => x.RootId == request.TargetRootId && x.RelativePath.ToUpper() == path.ToUpper())) throw new IOException("The catalog already records a copy at this destination, possibly offline. Choose a new path.");
     if (storage.Exists(request.TargetRootId, path)) throw new IOException("Destination collision. Choose a different path.");
+    var completion = await guard.CheckAsync(copy, null, ct);
     var fingerprint = storage.Observe(copy.RootId, copy.RelativePath);
-    var plan = new CopyPlan(copy.Id, request.TargetRootId, path, fingerprint.Bytes, fingerprint.Ticks, SourceIdentity: fingerprint.Identity);
+    var plan = new CopyPlan(copy.Id, request.TargetRootId, path, fingerprint.Bytes, fingerprint.Ticks, SourceIdentity: fingerprint.Identity, QBitRevision: completion.ConfigurationRevision);
     var job = new Operation { Type = "copy", Status = "draft", Payload = JobRunner.Encode(plan) };
     db.Jobs.Add(job); db.Audit("copy-preview", job.Id); await db.SaveChangesAsync();
-    return Results.Ok(new { job, plan, sourcePath = copy.RelativePath, freeBytes = storage.FreeBytes(request.TargetRootId) });
+    return Results.Ok(new { job, plan, sourcePath = copy.RelativePath, completion, freeBytes = storage.FreeBytes(request.TargetRootId) });
 });
 app.MapPost("/api/copy/{id}/commit", async (string id, Catalog db) =>
 {
@@ -112,20 +118,23 @@ app.MapPost("/api/copy/{id}/commit", async (string id, Catalog db) =>
     if (updated != 1) throw new ArgumentException("Preview has already been committed or is unavailable.");
     db.Audit("copy-approved", id); await db.SaveChangesAsync(); return Results.Ok();
 });
-app.MapPost("/api/metadata/preview", async (MetadataPlan plan, Catalog db) =>
+app.MapPost("/api/metadata/preview", async (MetadataPlan plan, Catalog db) => Results.Ok(await MetadataPreviews.Create(plan with { Provenance = null }, db)));
+app.MapGet("/api/metadata/providers", (MetadataProviders providers) => providers.Statuses);
+app.MapPost("/api/metadata/search", async (MetadataSearchRequest request, Catalog db, MetadataProviders providers, CancellationToken ct) =>
 {
-    if (plan.Changes.Length is < 1 or > 100 || plan.Changes.Select(x => x.TitleId).Distinct().Count() != plan.Changes.Length) throw new ArgumentException("Select 1–100 distinct titles.");
-    var rows = new List<object>();
-    foreach (var change in plan.Changes)
-    {
-        var original = await db.Titles.SingleAsync(x => x.Id == change.TitleId);
-        var updated = Metadata.Apply(original, change);
-        var assets = await (from e in db.Editions join a in db.Assets on e.Id equals a.EditionId where e.TitleId == original.Id select new { edition = e, asset = a }).ToListAsync();
-        rows.Add(new { before = original, after = updated, paths = assets.Select(x => new { oldPath = Naming.Plex(original, x.edition, x.asset), newPath = Naming.Plex(updated, x.edition, x.asset) }) });
-    }
-    var job = new Operation { Type = "metadata", Status = "draft", Payload = JobRunner.Encode(plan) }; db.Jobs.Add(job); await db.SaveChangesAsync();
-    return Results.Ok(new { job, rows });
+    if (string.IsNullOrWhiteSpace(request.Query) || request.Query.Length > 200) throw new ArgumentException("Enter a search query of 1–200 characters.");
+    var title = await db.Titles.SingleAsync(x => x.Id == request.TitleId, ct);
+    var provider = providers.Get(request.ProviderId);
+    return Results.Ok(new { provider = provider.Status, candidates = await provider.SearchAsync(request.Query, title.Kind, ct) });
 });
+app.MapPost("/api/metadata/match/preview", async (MatchRequest request, Catalog db, MetadataProviders providers, CancellationToken ct) =>
+{
+    var title = await db.Titles.SingleAsync(x => x.Id == request.TitleId, ct);
+    return Results.Ok(await MetadataPreviews.Create(await providers.Match(title, request, ct), db));
+});
+app.MapGet("/api/integrations/qbit", (QBitIntegration qbit, CancellationToken ct) => qbit.Status(ct));
+app.MapPut("/api/integrations/qbit", async (QBitConfiguration configuration, QBitIntegration qbit, CancellationToken ct) => { await qbit.Save(configuration, ct); return Results.Ok(await qbit.Status(ct)); });
+app.MapPost("/api/integrations/qbit/refresh", async (QBitIntegration qbit, CancellationToken ct) => Results.Ok(await qbit.Refresh(ct)));
 app.MapPost("/api/metadata/{id}/commit", async (string id, Catalog db) =>
 {
     await using var transaction = await db.Database.BeginTransactionAsync();
@@ -212,7 +221,7 @@ app.MapPost("/api/discs/{id}/verify", async (string id, RootRequest request, Cat
 app.MapGet("/api/export", async (Catalog db) =>
 {
     await using var transaction = await db.Database.BeginTransactionAsync();
-    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync() }));
+    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync(), integrations = await db.Integrations.ToListAsync() }));
     await transaction.CommitAsync();
     return Results.File(bytes, "application/json", "library-export.json");
 });

@@ -41,6 +41,11 @@ import type {
   Settings,
 } from "./types";
 import "./style.css";
+import {
+  IntegrationSettings,
+  MetadataMatcher,
+  QBitPanel,
+} from "./Integrations";
 
 type Area = "Library" | "Inbox" | "Organize" | "Discs" | "Jobs" | "Settings";
 const areas = [
@@ -605,6 +610,7 @@ function App() {
               </div>
             </div>
           )}
+          {area === "Inbox" && <QBitPanel />}
           {["Library", "Inbox", "Organize", "Discs"].includes(area) && (
             <div className="toolbar">
               <div className="tabs" aria-label="Media type">
@@ -803,6 +809,22 @@ function App() {
                           <code className="hash">{focus.copy.sha256}</code>
                         </details>
                       )}
+                      <MetadataMatcher
+                        row={focus}
+                        onPreview={(preview) => {
+                          setSelected(new Set());
+                          setEdits(
+                            JSON.parse(preview.job.payload).changes[0].fields,
+                          );
+                          setLocks(
+                            JSON.parse(preview.job.payload).changes[0]
+                              .lockedFields,
+                          );
+                          setMetaPreview(preview);
+                          setMetaOpen(true);
+                          setNfoXml(null);
+                        }}
+                      />
                       <div className="inspector-actions">
                         <button onClick={openMetadata}>
                           <SlidersHorizontal size={14} /> Edit metadata
@@ -1235,6 +1257,12 @@ function App() {
         )}
         {copyPreview && (
           <>
+            {copyPreview.completion && (
+              <div className="alert">
+                {copyPreview.completion.synthetic ? "SYNTHETIC CHECK · " : ""}
+                {copyPreview.completion.message}
+              </div>
+            )}
             <div className="plan-path">
               <small>SOURCE · RETAINED</small>
               <code>{copyPreview.sourcePath}</code>
@@ -1276,6 +1304,14 @@ function App() {
         )}
         {metaOpen && (
           <>
+            {metaPreview?.provenance && (
+              <div className="alert">
+                {metaPreview.provenance.synthetic ? "SYNTHETIC MATCH · " : ""}
+                {metaPreview.provenance.providerId} /{" "}
+                {metaPreview.provenance.candidateId}. Locked fields stay
+                unchanged; approval updates catalog metadata only.
+              </div>
+            )}
             <p className="modal-note">
               {new Set(metadataRows.map((r) => r.title.id)).size} titles
               selected. Metadata changes update the catalog. File paths below
@@ -1646,6 +1682,7 @@ function SettingsPanel({
           </div>
         </section>
       </div>
+      <IntegrationSettings roots={settings.roots} />
     </div>
   );
 }

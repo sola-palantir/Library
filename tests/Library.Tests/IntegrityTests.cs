@@ -306,11 +306,28 @@ public sealed class IntegrityTests : IDisposable
         var options = new LibraryOptions { DataPath = Path.Combine(home, "data"), Roots = [new("source", "source", Path.Combine(home, "source"), "X:/Downloads", "source"), new("library", "library", Path.Combine(home, "library"), "x:/downloads/organized", "library")] };
         Assert.Throws<ArgumentException>(() => new Storage(options).ValidateConfiguration());
     }
-    [Fact] public async Task LegacyPreviewWithoutIdentityCannotStartACopy()
+    [Fact]
+    public async Task LegacyPreviewWithoutIdentityCannotStartACopy()
     {
         var source = await Source(); var job = await Run("copy", Plan(source) with { SourceIdentity = null });
         Assert.Equal("failed", job.Status); Assert.Contains("lacks source identity", job.Error);
         Assert.Empty(Directory.GetFiles(Path.Combine(home, "library"), "*", SearchOption.AllDirectories));
+    }
+    [Fact]
+    public async Task WorkerRechecksCompletionBeforeCreatingDestination()
+    {
+        var source = await Source(); var plan = Plan(source, "not-ready.mkv") with { QBitRevision = 7 };
+        var job = new Operation { Type = "copy", Payload = JobRunner.Encode(plan) };
+        await using (var db = factory.CreateDbContext()) { db.Jobs.Add(job); await db.SaveChangesAsync(); }
+        var completion = new BlockingCopyGuard(); var worker = new JobRunner(factory, storage, NullLogger<JobRunner>.Instance, completion);
+        await worker.Run(job.Id, CancellationToken.None);
+        Assert.Equal(7, completion.SeenRevision); Assert.Empty(Directory.GetFiles(Path.Combine(home, "library"), "*", SearchOption.AllDirectories));
+        await using var verify = factory.CreateDbContext(); Assert.Equal("failed", (await verify.Jobs.SingleAsync(x => x.Id == job.Id)).Status);
+    }
+    private sealed class BlockingCopyGuard : IQBitCopyGuard
+    {
+        public int? SeenRevision { get; private set; }
+        public Task<CompletionEvidence> CheckAsync(PhysicalCopy copy, int? revision, CancellationToken ct) { SeenRevision = revision; throw new IOException("Synthetic file became incomplete after preview."); }
     }
     public void Dispose() { SqliteClear(); Directory.Delete(home, true); }
     private static void SqliteClear() => Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

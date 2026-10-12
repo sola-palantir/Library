@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Library.Api;
 
-public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger) : BackgroundService
+public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger, IQBitCopyGuard? guard = null) : BackgroundService
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static T Decode<T>(string json) => JsonSerializer.Deserialize<T>(json, Json) ?? throw new ArgumentException("Invalid plan.");
@@ -119,6 +119,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         else
         {
             if (plan.SourceIdentity == null) throw new IOException("Preview lacks source identity. Create a new preview before copying.");
+            if (guard != null) await guard.CheckAsync(source, plan.QBitRevision, stop);
             var before = storage.Fingerprint(source.RootId, source.RelativePath);
             if (before != (plan.Bytes, plan.ModifiedTicks) || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed since preview. Create a new plan.");
             storage.RemoveTemporaryIfPresent(plan.TargetRootId, temp, job.Id);

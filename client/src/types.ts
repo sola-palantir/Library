@@ -81,6 +81,11 @@ export type Change = {
   lockedFields: string[];
 };
 export type MetaPreview = {
+  provenance?: {
+    providerId: string;
+    candidateId: string;
+    synthetic: boolean;
+  } | null;
   job: Job;
   rows: {
     before: Title;
@@ -89,6 +94,13 @@ export type MetaPreview = {
   }[];
 };
 export type CopyPreview = {
+  completion?: {
+    state: string;
+    message: string;
+    configurationRevision: number;
+    synthetic: boolean;
+    observedUtc: string | null;
+  };
   job: Job;
   plan: {
     sourceCopyId: number;

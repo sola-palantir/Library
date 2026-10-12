@@ -4,7 +4,7 @@ namespace Library.Api;
 
 public static class CatalogSchema
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public static void Initialize(Catalog db)
     {
         db.Database.EnsureCreated();
@@ -30,7 +30,8 @@ public static class CatalogSchema
                 db.Database.ExecuteSqlRaw("UPDATE Copies SET Sha256 = NULL, State = CASE WHEN Role = 'library' AND State = 'verified' THEN 'online' ELSE State END WHERE Role IN ('library', 'source');");
                 db.Database.ExecuteSqlRaw("UPDATE Assets SET Sha256 = NULL;");
             }
-            db.Database.ExecuteSqlRaw("PRAGMA user_version = 2;");
+            db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS Integrations (Id TEXT NOT NULL PRIMARY KEY, Payload TEXT NOT NULL, Revision INTEGER NOT NULL);");
+            db.Database.ExecuteSqlRaw("PRAGMA user_version = 3;");
             transaction.Commit();
         }
         finally { db.Database.CloseConnection(); }

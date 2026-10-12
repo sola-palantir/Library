@@ -91,6 +91,7 @@ public sealed class Catalog(DbContextOptions<Catalog> options) : DbContext(optio
     public DbSet<AuditEvent> History => Set<AuditEvent>();
     public DbSet<Disc> Discs => Set<Disc>();
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<IntegrationDocument> Integrations => Set<IntegrationDocument>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<PhysicalCopy>().HasIndex(x => new { x.RootId, x.RelativePath }).IsUnique();
@@ -107,8 +108,8 @@ public sealed class LibraryOptions
     public string DataPath { get; set; } = "/data";
     public List<StorageRoot> Roots { get; set; } = [];
 }
-public record CopyPlan(long SourceCopyId, string TargetRootId, string TargetPath, long Bytes, long ModifiedTicks, string? Hash = null, string? SourceIdentity = null);
+public record CopyPlan(long SourceCopyId, string TargetRootId, string TargetPath, long Bytes, long ModifiedTicks, string? Hash = null, string? SourceIdentity = null, int? QBitRevision = null);
 public record ManifestEntry(long AssetId, long CopyId, string Path, long Bytes, string Sha256);
 public record FieldEdit(string Mode, string? Value);
 public record MetadataChange(long TitleId, int Revision, Dictionary<string, FieldEdit> Fields, string[] LockedFields);
-public record MetadataPlan(MetadataChange[] Changes);
+public record MetadataPlan(MetadataChange[] Changes, MetadataProvenance? Provenance = null);
