@@ -20,24 +20,35 @@ This guide is for a later, user-controlled installation. Nothing has been instal
 
 The image runs as the .NET `app` user. If a Windows bind mount is not writable, the operation should fail visibly. Resolve ownership/sharing through your normal Docker Desktop administration; do not run the service privileged or relax source mount protection as a workaround. If Docker Desktop's filesystem does not support the required no-replace rename/fsync behavior, stop and report the failing job rather than bypassing integrity checks.
 
-## BurnAware Free workflow
+## Windows optical companion workflow
 
-1. In Discs, select verified library copies, preview batches and save the plan.
-2. Select **Stage files**. Wait for the staging job to complete. Each batch gets a folder named by its disc ID in the staging root, with `manifest.json` and the original organized paths.
-3. In Windows, open BurnAware Free's data-disc GUI. Add the **contents** of that batch folder to a blank nominal 50 GB Blu-ray. Confirm actual available capacity and the burner settings. Burn externally.
-4. Only after the GUI reports success, select **Report written** in Library. This does not assert read-back verification.
-5. If an actual written disc can be exposed as a read-only folder to the Linux container, configure `DISC_READBACK_PATH` privately and start with the optional overlay:
+The browser/API remains in the Linux container. Optical devices are handled by the included native Windows CLI, not USB passthrough into Docker. Follow [the companion guide](companion.md) during a separately approved setup and hardware-validation step. Map the staging folder consistently between Windows and the container; keep companion state on a separate private, durable Windows directory. No listener, firewall changes or automatic software installation are required. Pairing is explicit and imports only the public key into the catalog. Commands, drive choice and receipt import are manual; the browser does not remotely start a burn.
 
-   ```powershell
-   docker compose -f compose.yaml -f compose.disc.yaml up -d
-   ```
+1. In Discs, select verified library copies and use **Preview whole-file packing** in the backup workspace. Review capacity, reserve, selected files and any season gaps, then choose **Record this backup plan**.
+2. For each recorded disc, choose **Stage verified files** and wait for its job to complete in Jobs. The staging directory is `<stagingRoot>/<discId>/`, containing the exact frozen `LIBRARY-MANIFEST.json` and selected relative paths. Preserve the manifest for later verification.
+3. Download **Companion command**. During Windows setup, use `Library.Companion devices` to identify the recorder and replace the downloaded `recorderId` placeholder. Keep the disc ID, manifest digest and reserve bound to this plan. Use a distinct command ID/file for each new operation; retain the same command and arguments when retrieving an existing result. Never create a fresh command to replay an uncertain burn.
+4. Run `Library.Companion prepare config.json prepare-command.json` to create the independent frozen `<stateRoot>/<discId>.udf.iso`. For native burning, run `Library.Companion burn config.json burn-command.json`. Successful writing records only `written-unverified`.
+5. Eject/reinsert the written disc as part of hardware qualification, then run `Library.Companion verify config.json verify-command.json`. Verification uses the selected recorder's mounted CD-ROM, written BD-R media, the exact embedded manifest and every selected file's size/SHA-256. It cannot verify a caller-supplied arbitrary directory.
+6. In Discs, open **Import signed companion evidence** and use **Validate and import evidence** to import the signed JSON envelopes, including failures or interruptions, in sequence. Only accepted full optical read-back evidence establishes `verified`; a writing report alone does not. The catalog cannot learn of later companion failures until their receipts are imported.
 
-   Choose **Verify read-back**. This checks every planned media file against the catalog manifest. Docker Desktop optical-drive mounting support depends on the host configuration and remains untested. If no real disc mount is available, leave the status **reported written**. A future Windows verification helper can close this gap; no helper is bundled now.
+Only supported blank write-once BD-R/BD-R DL is accepted. Nominal 50 GB is approximately 46.57 GiB; measured available sectors and final UDF image size plus reserve determine fit. The actual burner model, firmware and media must be qualified before use. No hardware qualification was performed in development. Consult the companion guide for capacity guards, command identity, interrupted attempts and private state backups.
 
-The Free edition's GUI workflow is the integration boundary. BurnAware's dedicated console burner is associated with its Professional edition; this project promises no headless Free integration.
+## BurnAware Free fallback
 
-## Optional Windows optical companion
+After preparing the frozen image, run `Library.Companion fallback config.json fallback-command.json` with a fresh command ID. This checks the same image, validates the inserted blank and records an external attempt against the permanent physical disc ID.
 
-The browser/API remains in the Linux container. Optical devices are handled by the separate native Windows CLI, not USB passthrough into Docker. Follow [the companion guide](companion.md) only during a separately approved setup and hardware-validation step. Map the staging folder consistently between Windows and the container; keep companion state on a separate private, durable Windows directory. No listener, firewall changes or automatic software installation are required by the companion. Pairing is explicit and imports only the public key into the catalog. Burn commands, drive choice and receipt import are manual in this release; the browser does not remotely start a burn.
+Use BurnAware Free's **Burn ISO** GUI with that exact `.udf.iso`, rather than assembling a new data project from the staging folder. The companion cannot control BurnAware's later media selection or GUI settings; its preflight is not proof of a successful external write. Only after successful external writing, run `Library.Companion report-external config.json report-command.json`; this records `written-unverified`. Perform the same companion `verify` and signed receipt import described above. Failed or uncertain attempts require review and a replacement physical ID, not another write under the old identity.
 
-Only supported blank write-once BD-R/BD-R DL is accepted. Nominal 50 GB is approximately 46.57 GiB; measured available sectors and final UDF image size plus reserve determine fit. The actual burner model, firmware and media must be qualified before use. No hardware qualification was performed in development.
+BurnAware Free remains a manual GUI fallback. Its dedicated console burner is associated with the Professional edition; this project promises no headless Free integration. BurnAware image compatibility remains part of hardware qualification.
+
+## Legacy folder content checks
+
+Older disc batches remain available for compatibility. Their **Stage files** action produces a batch folder with `manifest.json`; this is the legacy format, not the companion's `LIBRARY-MANIFEST.json` contract. **Report written** records only `reported-written`.
+
+For an explicitly mounted legacy disc directory, `DISC_READBACK_PATH` and the optional overlay can expose its contents read-only:
+
+```powershell
+docker compose -f compose.yaml -f compose.disc.yaml up -d
+```
+
+**Check legacy content** compares the exact legacy manifest and all planned files and records only `content-checked`. A container-visible directory cannot establish that those bytes were read from the intended physical optical disc, even if the user describes it as a disc mount. This path never establishes physical-disc verification and is not a substitute for recorder-bound companion evidence. The overlay is unnecessary for companion verification; Docker Desktop optical mounting remains untested.

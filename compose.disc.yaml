@@ -1,4 +1,6 @@
-# Optional overlay for an explicitly mounted, actual read-back disc directory.
+# Optional read-only overlay for legacy folder content checks only.
+# A successful check records content-checked, never physical-disc verification.
+# Native companion verification does not use this overlay.
 services:
   library:
     environment:

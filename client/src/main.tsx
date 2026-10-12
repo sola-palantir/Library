@@ -1036,7 +1036,7 @@ function App() {
                               )!.id,
                             });
                             setNotice(
-                              "Disc staging queued. Burn the contents of the batch folder in BurnAware Free.",
+                              "Legacy staging queued. Folder checks provide content evidence only. Use the backup workspace and companion guide for frozen-image burning and optical verification.",
                             );
                           })
                         }
@@ -1049,7 +1049,7 @@ function App() {
                             run(async () => {
                               await api(`/discs/${d.id}/written`, {});
                               setNotice(
-                                "Disc reported written. Read-back verification is still required.",
+                                "Legacy disc reported written. Check legacy content can record content-checked only; it cannot establish optical verification.",
                               );
                             })
                           }
