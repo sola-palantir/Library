@@ -118,6 +118,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         }
         else
         {
+            if (plan.SourceIdentity == null) throw new IOException("Preview lacks source identity. Create a new preview before copying.");
             var before = storage.Fingerprint(source.RootId, source.RelativePath);
             if (before != (plan.Bytes, plan.ModifiedTicks) || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed since preview. Create a new plan.");
             storage.RemoveTemporaryIfPresent(plan.TargetRootId, temp, job.Id);

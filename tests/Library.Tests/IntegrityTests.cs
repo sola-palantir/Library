@@ -306,6 +306,12 @@ public sealed class IntegrityTests : IDisposable
         var options = new LibraryOptions { DataPath = Path.Combine(home, "data"), Roots = [new("source", "source", Path.Combine(home, "source"), "X:/Downloads", "source"), new("library", "library", Path.Combine(home, "library"), "x:/downloads/organized", "library")] };
         Assert.Throws<ArgumentException>(() => new Storage(options).ValidateConfiguration());
     }
+    [Fact] public async Task LegacyPreviewWithoutIdentityCannotStartACopy()
+    {
+        var source = await Source(); var job = await Run("copy", Plan(source) with { SourceIdentity = null });
+        Assert.Equal("failed", job.Status); Assert.Contains("lacks source identity", job.Error);
+        Assert.Empty(Directory.GetFiles(Path.Combine(home, "library"), "*", SearchOption.AllDirectories));
+    }
     public void Dispose() { SqliteClear(); Directory.Delete(home, true); }
     private static void SqliteClear() => Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 }

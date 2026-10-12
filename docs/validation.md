@@ -6,7 +6,7 @@ All file operations used generated fixtures in the isolated `/workspace/Library`
 
 | Check | Command / evidence | Result |
 | --- | --- | --- |
-| Backend integrity suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` | 31 passed, 0 failed |
+| Backend integrity suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` | 32 passed, 0 failed |
 | TypeScript and production bundle | `npm --prefix client run build` | Passed; React assets generated |
 | Frontend formatting | `npm --prefix client run format:check` | Passed |
 | Chromium browser / API suite | `CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` | 3 passed |
@@ -43,7 +43,7 @@ Artwork is generated with local CSS as a placeholder. File sizes are deliberatel
 
 The production screenshot was visually inspected: the catalog table, inspector, verification badges, navigation and synthetic paths are legible. Artwork is a local decorative placeholder; it is not fetched movie artwork. Browser tests use the published same-origin UI and actual APIs, not mocked catalog responses.
 
-The follow-up audit corrected two integrity gaps: (1) cached verification previously depended on size/mtime and could survive a replacement with restored timestamps; scans and disc-plan admission now also require device/inode/ctime identity, with identity checked on the open file handle during copy/verification; (2) an offline catalog entry could be silently reused as a destination for a different asset; catalog-reserved paths now reject new copy plans and execution. Canonical root, same-directory alias and declared Windows mapping checks were strengthened. A tested transactional v1→v2 schema upgrade preserves catalog/history while clearing legacy hashes without identity evidence.
+The follow-up audit corrected two integrity gaps: (1) cached verification previously depended on size/mtime and could survive a replacement with restored timestamps; scans and disc-plan admission now also require device/inode/ctime identity, with identity checked on the open file handle during copy/verification; (2) an offline catalog entry could be silently reused as a destination for a different asset; catalog-reserved paths now reject new copy plans and execution. Canonical root, same-directory alias and declared Windows mapping checks were strengthened. A tested transactional v1→v2 schema upgrade preserves catalog/history while clearing legacy hashes without identity evidence. Legacy previews without source identity cannot begin a copy; already-published data can still recover through full destination hash verification.
 
 Additional tests cover the two regressions, overlapping/symlink/Windows roots, repeated schema upgrade, and restoring catalog, copies and operation history from a SQLite online backup. A successful read-back status records filesystem hash evidence at the time of the read; the application cannot authenticate a physical Blu-ray drive from a configured folder. Source files remain unchanged by these workflows; active torrent seeding is not queried or asserted.
 
