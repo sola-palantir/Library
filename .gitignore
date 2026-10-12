@@ -1,0 +1,15 @@
+.dotnet/
+**/bin/
+**/obj/
+**/node_modules/
+client/dist/
+.local/
+.env
+*.db
+*.db-shm
+*.db-wal
+playwright-report/
+test-results/
+*.tsbuildinfo
+__pycache__/
+*.pyc
