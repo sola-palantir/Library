@@ -35,3 +35,9 @@ The image runs as the .NET `app` user. If a Windows bind mount is not writable, 
    Choose **Verify read-back**. This checks every planned media file against the catalog manifest. Docker Desktop optical-drive mounting support depends on the host configuration and remains untested. If no real disc mount is available, leave the status **reported written**. A future Windows verification helper can close this gap; no helper is bundled now.
 
 The Free edition's GUI workflow is the integration boundary. BurnAware's dedicated console burner is associated with its Professional edition; this project promises no headless Free integration.
+
+## Optional Windows optical companion
+
+The browser/API remains in the Linux container. Optical devices are handled by the separate native Windows CLI, not USB passthrough into Docker. Follow [the companion guide](companion.md) only during a separately approved setup and hardware-validation step. Map the staging folder consistently between Windows and the container; keep companion state on a separate private, durable Windows directory. No listener, firewall changes or automatic software installation are required by the companion. Pairing is explicit and imports only the public key into the catalog. Burn commands, drive choice and receipt import are manual in this release; the browser does not remotely start a burn.
+
+Only supported blank write-once BD-R/BD-R DL is accepted. Nominal 50 GB is approximately 46.57 GiB; measured available sectors and final UDF image size plus reserve determine fit. The actual burner model, firmware and media must be qualified before use. No hardware qualification was performed in development.

@@ -9,10 +9,12 @@ A local media catalog and preservation workspace for movies and television. Reac
 ## Implemented
 
 - **Library / Inbox:** paginated catalog, filtering, keyboard search, artwork placeholders, resizable inspector, read-only incremental scans. Separate title, edition/episode, asset and physical-copy records. Missing files remain cataloged as offline.
-- **Organize:** two panes, drag/drop or keyboard-accessible selection to stage a preview; approve independent copies with Plex-compatible paths. Sources and sidecars remain untouched. SHA-256 source-stream hash is compared with a complete destination read-back before publication. No overwrite, hardlink or deletion operations.
+- **Organize:** two panes, drag/drop or keyboard-accessible selection to stage a preview; approve independent copies with Plex-compatible paths. Sources and sidecars remain untouched. SHA-256 source-stream hash is compared with destination read-back before and after publication; catalog evidence is bound to the verified file identity. No overwrite, hardlink or deletion operations.
 - **Integrations:** version-aware read-only qBittorrent adapter, per-file completion, explicit source-path mapping and copy-time readiness rechecks; disabled and synthetic modes. No live client has been used.
 - **Metadata:** reviewable synthetic provider matches, bulk leave/set/clear changes, manual locks, optimistic revisions, old/new field and proposed-path previews. NFO import preview and export can preserve unknown XML fields when the original NFO is supplied. DTDs and external entities are prohibited.
-- **Discs:** first-fit-decreasing whole-file batches; default 50,000,000,000-byte discs with a configurable 1,000,000,000-byte reserve. Staging copies and JSON manifests for BurnAware Free. Planned, reported-written and read-back-verified statuses are separate. Oversized files are rejected; seasons may span discs.
+- **Discs:** immutable backup sets and manifests, permanent handwriting-friendly labels, searchable attempt history and distinct replacement discs. Bounded exact-size optimization supports fill-one and minimize-disc objectives, reports whether optimality was proved, and keeps selected sidecars with their media. Season scopes declare expected/missing/excluded episodes and preserve whole-episode order across discs.
+- **Windows companion:** native IMAPI UDF image creation and burning code, measured blank BD-R/DL capacity, full optical read-back, durable attempts and signed receipts. Manual BurnAware fallback uses the same frozen image. Compiles for Windows; hardware qualification is pending. See [companion setup and limits](docs/companion.md).
+- **Preservation:** bounded optional audits, review-required failures and explicitly approved repair copies to new paths. No original media is overwritten. Offline restore targets a new directory and requires a startup reconciliation acknowledgement. [Audit/restore guide](docs/audits-restore.md).
 - **Jobs / Settings:** SQLite durable journal, one active background file job, queue limit of 100, cancellation/retry, restart recovery, explicit path mappings, configurable retention review (20 days by default), JSON export and consistent SQLite backup.
 
 No open-source license has been selected. No credentials, personal media inventories or tracker URLs belong in this repository.
@@ -38,6 +40,7 @@ If `dotnet` is installed outside PATH, use `DOTNET=/absolute/path/to/dotnet scri
 
 ```sh
 dotnet test tests/Library.Tests -c Release
+dotnet test companion/Library.Companion.Tests -c Release
 npm --prefix client run build
 # With the synthetic API and UI already running:
 cd client
@@ -51,4 +54,4 @@ The browser test performs real operations on the synthetic fixture roots. Use a 
 
 ## Current limits
 
-This is a reviewable initial implementation, not a production release. Filename inference is deliberately conservative and needs review. A read-only qBittorrent adapter and configuration UI are implemented with mocked contracts, but have not contacted a live client. Metadata matching uses explicitly synthetic responses; live TMDB lookup is unconfigured. There is no artwork download, direct burning, host helper, FileBot dependency, or automatic source cleanup. See [integration states and setup](docs/integrations.md). The retention clock starts when a source is first observed, not at torrent completion. NFO sidecars are downloaded/exported, never rewritten in torrent directories. Existing library files can be scanned, but currently become eligible for disc planning only after a verified independent-copy job. Full-scale 20–30 TB performance and Windows-mounted filesystem behavior remain to be validated.
+This is a reviewable initial implementation, not a production release. Filename inference is deliberately conservative and needs review. A read-only qBittorrent adapter and configuration UI are implemented with mocked contracts, but have not contacted a live client. Metadata matching uses explicitly synthetic responses; live TMDB lookup is unconfigured. There is no artwork download, FileBot dependency or automatic source cleanup. The Windows companion and IMAPI code are compiled and simulated, not qualified on an actual drive. See [integration states and setup](docs/integrations.md). The retention clock starts when a source is first observed, not at torrent completion. NFO sidecars are downloaded/exported, never rewritten in torrent directories. Existing library files can be scanned, but currently become eligible for disc planning only after a verified independent-copy job. Full-scale 20–30 TB performance and Windows-mounted filesystem behavior remain to be validated.

@@ -42,6 +42,11 @@ import type {
 } from "./types";
 import "./style.css";
 import {
+  BackupWorkspace,
+  CompanionSettings,
+  PreservationSettings,
+} from "./Backups";
+import {
   IntegrationSettings,
   MetadataMatcher,
   QBitPanel,
@@ -167,13 +172,14 @@ function App() {
     );
   }, [area, search, kind, page]);
   useEffect(() => {
+    if (query === search) return;
     const t = setTimeout(() => {
       setSearch(query);
       setPage(0);
       setSelected(new Set());
     }, 200);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, search]);
   useEffect(() => {
     setLoading(true);
     load().catch((e) => {
@@ -979,8 +985,9 @@ function App() {
                 <span className="badge">External burning</span>
               </div>
               {table(rows)}
+              <BackupWorkspace selected={chosen} settings={settings} />
               <div className="section-heading">
-                <h2>Disc catalog</h2>
+                <h2>Legacy disc batches</h2>
                 <span>{discs.length} batches</span>
               </div>
               <div className="disc-grid">
@@ -1060,12 +1067,12 @@ function App() {
                                 )!.id,
                               });
                               setNotice(
-                                "Read-back verification queued from the configured disc mount.",
+                                "Folder content check queued. This cannot establish optical verification.",
                               );
                             })
                           }
                         >
-                          Verify read-back
+                          Check legacy content
                         </button>
                       )}
                     </div>
@@ -1682,6 +1689,8 @@ function SettingsPanel({
           </div>
         </section>
       </div>
+      <CompanionSettings />
+      <PreservationSettings />
       <IntegrationSettings roots={settings.roots} />
     </div>
   );

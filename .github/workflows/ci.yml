@@ -16,6 +16,8 @@ jobs:
       - run: dotnet test tests/Library.Tests -c Release
         env:
           DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      - run: dotnet test companion/Library.Companion.Tests -c Release
+      - run: dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false
       - run: npm ci && npm run build
         working-directory: client
       - run: npx playwright install --with-deps chromium
@@ -33,3 +35,13 @@ jobs:
           path: |
             docs/screenshots/
             client/test-results/
+
+  windows-compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false
+      # Compilation only: no pairing, COM calls, device discovery or optical writes.

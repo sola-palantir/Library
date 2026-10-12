@@ -1,68 +1,54 @@
 # Validation evidence — 2026-10-12
 
-All file operations used generated fixtures in the isolated `/workspace/Library` checkout or automatically created temporary test directories. The configured `media-stack` repository was not edited. No host installation, live media connection, merge or deployment was performed. Remote publication and CI status are recorded separately in the handoff.
+All file operations used invented fixtures in the isolated Library checkout or temporary test directories. No live media, torrent client, metadata service, Windows host, optical drive or BurnAware process was accessed. The unrelated media-stack repository was not edited. No software was installed on the user's machine, no operational pairing key was created, and no merge or deployment occurred.
 
 ## Passed locally
 
-| Check | Command / evidence | Result |
-| --- | --- | --- |
-| Backend integrity suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` | 56 passed, 0 failed |
-| TypeScript and production bundle | `npm --prefix client run build` | Passed; React assets generated |
-| Frontend formatting | `npm --prefix client run format:check` | Passed |
-| Chromium browser / API suite | `CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` | 4 passed |
-| Production artifact | `dotnet publish server/Library.Api -c Release --no-restore -o .local/publish /p:UseAppHost=false` plus React assets in `wwwroot` | Published and served locally |
-| Same-origin production UI | `LIBRARY_BASE_URL=http://127.0.0.1:5080 CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` | 4 passed against the locally published production artifact |
-| Catalog backup | Download `/api/backup`; open with SQLite and run `PRAGMA integrity_check` | `ok` |
-| Compose configuration | `docker compose config --quiet`, base and disc overlay, synthetic root mappings | Both passed |
-| Production npm audit | `npm --prefix client audit --omit=dev --audit-level=high` | 0 reported vulnerabilities |
-| Patch whitespace | `git diff --check` | Passed |
+| Check | Command / result |
+| --- | --- |
+| API and preservation suite | `dotnet test tests/Library.Tests -c Release --no-restore --nologo` — **85 passed** |
+| Companion simulations | `dotnet test companion/Library.Companion.Tests -c Release --no-restore --nologo` — **38 passed** |
+| Windows companion cross-build | `dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false` — passed |
+| TypeScript / production assets | `npm --prefix client run build` — passed |
+| Formatting | `npm --prefix client run format:check` — passed |
+| Browser suite | `LIBRARY_BASE_URL=http://127.0.0.1:5082 CHROMIUM_PATH=/usr/bin/chromium npm --prefix client run test:e2e` — **6 passed** against the locally published same-origin UI |
+| Dependency audit | `npm --prefix client audit --omit=dev --audit-level=high` — zero reported vulnerabilities |
+| Patch whitespace | `git diff --check` — passed |
 
-The integrity suite covers independent destination data, source/sidecar preservation, repeat scans without rehashing, offline catalog retention, unavailable roots, stale previews, same-length source replacement with restored mtime, exact/case collisions, cancellation before execution, partial-copy restart, publish-before-catalog recovery, recovery with an offline source, worker startup recovery, low free space via sparse synthetic fixtures, root/path restrictions, symlink rejection, preview nonmutation, NFO external-entity rejection and unknown-field preservation, manual metadata locks and revisions, decimal-capacity packing, oversized-file rejection, disc staging, positive and corrupt read-back, and Plex movie/TV naming.
+Five browser workflows use the real API and synthetic filesystem roots. One isolated UI workflow mocks API responses to inject lost-response errors and exercise season scope/approval/mobile behavior. Neither approach constitutes optical-hardware evidence.
 
-Browser coverage exercises the real API: scan, inspector, copy preview and approval, completed verification, metadata before/after review, whole-file disc plan, staged files, keyboard search, no-result state, mobile navigation, reduced-motion mode, horizontal overflow check, cross-origin/incorrect-content-type rejection, XML entity rejection and SQLite backup download. Browser-side uncaught errors are asserted absent in the primary workflow.
+The real backup workflow copies two synthetic episodes, declares an expected three-episode season, packs two whole-episode discs, keeps the missing episode visible, approves an immutable backup, retries approval without creating another set, stages both batches, downloads their manifests and refuses unsigned receipt import. The catalog scan/copy/metadata/legacy staging workflow, qBittorrent synthetic contracts, keyboard navigation, reduced motion, mobile layout, cross-origin controls, XML entity refusal and SQLite backup download also pass.
 
-## Screenshots of the running UI
+## Preservation and review evidence
 
+Independent review checkpoints covered copy publication, immutable backup records, staging, native companion boundaries, receipt import, audit/repair and restore. Findings were corrected before publication:
+
+- Hash evidence is bound to the file observed during hashing. Adversarial replacements before publication, after publication, before registration and after registration cannot acquire an old hash. Failed recovery clears current verification while retaining history.
+- Complete staging rechecks include the immutable manifest. Legacy folder checks can only produce content evidence; schema v4 downgrades old optical claims and retains/invalidates pre-v4 cached copy hashes.
+- Permanent physical labels, frozen snapshots and evidence have uniqueness constraints and update/delete guards. Replacement blanks receive distinct identities. SQLite backup/restore retains those protections and history.
+- The exact packing solver is checked against an independent exhaustive subset-DP oracle on **120 deterministic randomized fixtures**, each with 6–10 items, for minimum disc count and maximum single-disc fill. Bounded searches label unproved results rather than claiming optimality.
+- Receipt signatures require a pinned public key, matching manifest/image, actual hardware mode and complete read-back evidence. Serialized transactional imports reject stale sequences and old success predating newer local adverse evidence. Duplicate imports cannot append/promote old success.
+- Companion simulations cover wrong disc/volume label/manifest, stale staged or image data, measured-capacity boundaries, unsupported/nonblank media, no blind replay, lost completion response, interrupted writes, corrupt/orphan journal records, failed reverification and failed verification preflight. Windows write-ahead event publication is write-through; roots are distinct and scoped.
+- Audits are disabled by default, bounded and read-only. Corruption/missing expectations create review evidence. Repairs produce approval-required independent copies to unused paths.
+- Restore writes a durable incomplete marker before creating its new catalog. Faults before creation and after copying retain the marker. Startup refuses incomplete restores and requires explicit report-digest acknowledgement for completed restores. Standalone source backups are opened immutably without creating WAL/SHM sidecars.
+
+## Actual UI screenshots
+
+- [Backup planning with a missing episode](screenshots/backup-plan.png)
+- [Permanent labels and staged-disc history](screenshots/backup-history.png)
 - [Library and inspector](screenshots/library.png)
-- [Copy approval preview](screenshots/copy-preview.png)
+- [Copy preview](screenshots/copy-preview.png)
+- [Settings and integrations](screenshots/integrations.png)
 - [Mobile settings](screenshots/mobile-settings.png)
 
-Artwork is generated with local CSS as a placeholder. File sizes are deliberately tiny synthetic payloads; they are not mock claims about a real collection.
+Screenshots were captured from the running UI and visually reviewed. All titles, paths and tiny file payloads are synthetic. Artwork remains a CSS placeholder.
 
-## Blocked or not exercised
+## Boundaries and remaining qualification
 
-- **Docker image pull/build/runtime:** `docker pull mcr.microsoft.com/dotnet/sdk:10.0` failed after retries with `error pulling image configuration: download failed after attempts=6: Forbidden`. No container startup success is claimed. Compose syntax and the equivalent locally published .NET/frontend artifact are independently checked.
-- **Downloaded Playwright Chromium:** CDN requests returned HTTP 403 `Domain forbidden`. The installed `/usr/bin/chromium` successfully ran the browser checks instead.
-- **Default .NET installer:** its fallback `ci.dot.net` endpoint returned HTTP 403. Microsoft’s `builds.dotnet.microsoft.com` direct SDK endpoint worked, allowing the local .NET 10.0.401 build/test toolchain.
-- **External integration:** no live qBittorrent, Plex, Jellyfin, metadata provider, Windows host, BurnAware process or physical Blu-ray was used. Read-back tests used a separate synthetic directory.
-- **Scale and hardware:** no 20–30 TB performance run, Windows Docker Desktop bind-mount test, actual power-loss fault injection, optical capacity check or physical disc read-back. Cancellation during long real-media I/O and Windows filesystem semantics need a controlled pilot.
-- **CI / publication:** GitHub Actions is prepared but not run remotely. Publication was explicitly authorized after local review; the remote commit and CI result must be verified in the handoff.
-
-
-## Follow-up quality review
-
-The production screenshot was visually inspected: the catalog table, inspector, verification badges, navigation and synthetic paths are legible. Artwork is a local decorative placeholder; it is not fetched movie artwork. Browser tests use the published same-origin UI and actual APIs, not mocked catalog responses.
-
-The follow-up audit corrected two integrity gaps: (1) cached verification previously depended on size/mtime and could survive a replacement with restored timestamps; scans and disc-plan admission now also require device/inode/ctime identity, with identity checked on the open file handle during copy/verification; (2) an offline catalog entry could be silently reused as a destination for a different asset; catalog-reserved paths now reject new copy plans and execution. Canonical root, same-directory alias and declared Windows mapping checks were strengthened. A tested transactional v1→v2 schema upgrade preserves catalog/history while clearing legacy hashes without identity evidence. Legacy previews without source identity cannot begin a copy; already-published data can still recover through full destination hash verification.
-
-Additional tests cover the two regressions, overlapping/symlink/Windows roots, repeated schema upgrade, and restoring catalog, copies and operation history from a SQLite online backup. A successful read-back status records filesystem hash evidence at the time of the read; the application cannot authenticate a physical Blu-ray drive from a configured folder. Source files remain unchanged by these workflows; active torrent seeding is not queried or asserted.
-
-Registry investigation: a read-only HEAD request to `https://mcr.microsoft.com/v2/` and to the pinned SDK manifest both returned HTTP 200, while `docker pull mcr.microsoft.com/dotnet/sdk:10.0.401` again failed on image configuration/layer transfer with `download failed after attempts=6: Forbidden`. Microsoft's [container image documentation](https://learn.microsoft.com/en-us/dotnet/core/docker/container-images) and [official docker repository](https://github.com/dotnet/dotnet-docker) identify MCR as the image source; the Docker Hub catalog links do not establish a separate official mirror. No verified alternate official registry was found. No permissions, proxy settings, network controls or registry credentials were changed.
-
-### Implemented versus unconnected integrations
-
-| Area | Implemented | Not implemented or untested |
-| --- | --- | --- |
-| Metadata | Catalog title/year/plot/genre editing; leave/set/clear; locks/revisions; before/after preview; synthetic provider search and reviewed matching | Live provider lookup, artwork fetching, title merge/split, edition/episode editor |
-| NFO | Manual XML import preview; export/download; unknown-field preservation when original XML is supplied; DTD/XXE rejection | Automatic torrent-sidecar writes; provider-specific full round trips; bulk folder import |
-| Plex | Movie, edition and single-episode naming suggestions | Plex API connection, library refresh, playback, actual NFO-agent integration test; complex multi-episode naming |
-| qBittorrent | Read-only API adapter, version negotiation, per-file completion/state observations, path mapping and copy-time recheck; mocked contracts; independent copies | Live client validation and torrent removal; no deletion occurs |
-| Jellyfin | Separate catalog/copy model and NFO-based interoperability foundation | Server integration or validated Jellyfin round trip |
-| BurnAware / discs | Whole-file packing, independently verified staging, manifests, explicit written/read-back states | BurnAware process control, Windows helper, physical burn or optical read-back test |
-
-
-## Adapter implementation validation
-
-The expanded 56-test backend suite includes representative qBittorrent 4.6.7/5.0.4 contracts, API-version refusal, GET-only torrent endpoint assertions, authentication failure without retry, per-file completion within partial torrents, unsafe-state blocking, malformed file identity rejection, path-boundary/longest-prefix mapping, disabled/manual behavior, configuration-revision checks, physical-size mismatch, worker completion recheck, synthetic provider candidates, no-match behavior, locked metadata, stale/kind-mismatched choices and explicitly unconfigured live lookup. No live client or provider request occurred. Schema v3 adds only non-secret integration configuration; backups/exports include those settings.
-
-Final adapter browser validation: 4 workflows passed against the locally published same-origin production build. This includes explicit synthetic qBittorrent configuration/refresh, completed and incomplete file displays, blocked incomplete-copy preview, synthetic completion evidence, no-match/manual behavior, reviewed candidate selection and unchanged catalog revision before approval. A mobile settings overflow introduced by the new panel was caught and fixed. The schema-v3 SQLite backup passed integrity checking and preserved integration configuration.
+- **Hardware:** Windows x64 output compiles, but native COM/device calls, actual BD-R/DL capacity, physical UDF burning/read-back, tray/exclusive locking, power loss, cache behavior, firmware and Windows filesystem semantics remain unqualified. Simulations never import as optical verification. Drive model and actual media are still setup prerequisites.
+- **Companion workflow:** local CLI commands and signed receipt import are manual. Docker does not remotely start a burn or receive live progress. It cannot know about a later Windows failure until its receipt is imported. BurnAware uses the same frozen image but its GUI choices cannot be enforced. Identity is the embedded permanent ID/label; deliberately cloned identities cannot be distinguished.
+- **Restore:** catalog and companion state must be reconciled together; restoring an older journal cannot establish that an already-attempted blank is unused. No restore erases media or rewinds physical activity.
+- **Docker runtime:** previous MCR SDK image configuration/layer pulls returned **403 Forbidden**, although registry/manifest HEAD requests succeeded. Compose configuration passed previously; no image build/container runtime success is claimed. No permissions, registry credentials or network controls were changed.
+- **Browser/tool downloads:** Playwright CDN downloads were blocked locally; the installed Chromium ran all browser checks. The SDK was obtained from Microsoft's supported direct download endpoint after installer fallback access failed.
+- **Scale/integrations:** no 20–30 TB performance benchmark, Windows Docker Desktop bind-mount validation, live qBittorrent, Plex/Jellyfin or real metadata provider testing. Those integration limits remain in [integrations.md](integrations.md).
+- **Remote CI:** the earlier foundation commit passed GitHub Actions. The expanded workflow runs API tests, companion simulations, cross-build, browser checks and a separate Windows compilation job. Exact final commit and CI result are reported in the delivery handoff; hardware actions are excluded from CI.

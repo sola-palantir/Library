@@ -97,10 +97,10 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
       .first()
       .getByText("completed", { exact: true }),
   ).toBeVisible({ timeout: 15000 });
-  const exportResponse = await request.get("http://127.0.0.1:5080/api/export");
+  const exportResponse = await request.get("/api/export");
   expect(exportResponse.ok()).toBeTruthy();
   const exported = await exportResponse.json();
-  expect(exported.schemaVersion).toBe(3);
+  expect(exported.schemaVersion).toBe(4);
   expect(exported.history.length).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
@@ -142,7 +142,7 @@ test("keyboard search, empty results, mobile navigation and reduced motion", asy
 test("API rejects cross-origin mutations, validates XML, and exports a SQLite backup", async ({
   request,
 }) => {
-  const base = "http://127.0.0.1:5080/api";
+  const base = "/api";
   const blocked = await request.post(base + "/scan", {
     headers: { Origin: "https://untrusted.example" },
     data: { rootId: "source" },
@@ -173,7 +173,7 @@ test("synthetic torrent completion and reviewable metadata matching remain expli
   page,
   request,
 }) => {
-  const base = "http://127.0.0.1:5080/api";
+  const base = "/api";
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("qBittorrent mode").selectOption("synthetic");
