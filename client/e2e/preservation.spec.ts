@@ -44,9 +44,17 @@ test("real backup API stages a partial season and preserves idempotent history",
   }
   await page.goto("/");
   await page.getByRole("button", { name: "Discs", exact: true }).click();
+  const searchResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/catalog" &&
+      url.searchParams.get("q") === `Preservation-${stamp}`
+    );
+  });
   await page
     .getByRole("textbox", { name: "Search media" })
     .fill(`Preservation-${stamp}`);
+  await searchResponse;
   await expect(
     page.getByRole("checkbox", { name: "Select Signal Coast", exact: true }),
   ).toHaveCount(2);

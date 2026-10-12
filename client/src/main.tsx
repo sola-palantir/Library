@@ -176,7 +176,6 @@ function App() {
     const t = setTimeout(() => {
       setSearch(query);
       setPage(0);
-      setSelected(new Set());
     }, 200);
     return () => clearTimeout(t);
   }, [query, search]);
@@ -644,7 +643,10 @@ function App() {
                 <input
                   ref={searchRef}
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setSelected(new Set());
+                  }}
                   placeholder="Search your collection…"
                   aria-label="Search media"
                 />
