@@ -74,8 +74,10 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   ).toBeVisible();
   const existingDiscCount = await page.locator(".disc-card").count();
   await page
-    .getByRole("checkbox", { name: "Select Northlight", exact: true })
+    .locator("tbody tr")
+    .filter({ has: page.locator(".badge.verified") })
     .first()
+    .getByRole("checkbox")
     .check();
   await page.getByRole("button", { name: "Preview disc batches" }).click();
   await expect(
@@ -98,7 +100,7 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   const exportResponse = await request.get("http://127.0.0.1:5080/api/export");
   expect(exportResponse.ok()).toBeTruthy();
   const exported = await exportResponse.json();
-  expect(exported.schemaVersion).toBe(1);
+  expect(exported.schemaVersion).toBe(2);
   expect(exported.history.length).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });

@@ -933,8 +933,8 @@ function App() {
               <div className="workflow-note">
                 <ShieldCheck size={17} />
                 <span>
-                  Copy → SHA-256 read-back → publish without overwrite. Your
-                  source keeps seeding.
+                  Copy → SHA-256 read-back → publish without overwrite. Source
+                  files remain unchanged.
                 </span>
               </div>
             </>

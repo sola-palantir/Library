@@ -14,17 +14,28 @@ public sealed class Storage(LibraryOptions options)
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Run the service in a Linux container.");
         if (Roots.Select(x => x.Id).Distinct().Count() != Roots.Count) throw new ArgumentException("Root IDs must be unique.");
+        var rootIdentities = new HashSet<string>();
         foreach (var r in Roots)
         {
             if (r.Role is not ("source" or "library" or "staging" or "disc")) throw new ArgumentException("Invalid root role.");
             if (!Path.IsPathFullyQualified(r.ContainerPath) || r.ContainerPath == "/") throw new ArgumentException("Roots must be absolute and cannot be /.");
             var path = Path.GetFullPath(r.ContainerPath).TrimEnd('/');
+            if (path.Length == 0) throw new ArgumentException("A storage root cannot be the filesystem root.");
             if (Roots.Any(other => other != r && (path.Equals(Path.GetFullPath(other.ContainerPath).TrimEnd('/'), StringComparison.OrdinalIgnoreCase) || path.StartsWith(Path.GetFullPath(other.ContainerPath).TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase))))
                 throw new ArgumentException("Storage roots must not overlap.");
             var data = Path.GetFullPath(options.DataPath).TrimEnd('/');
             if (path == data || path.StartsWith(data + "/") || data.StartsWith(path + "/")) throw new ArgumentException("Catalog data must be separate from media roots.");
             // Missing mounts remain visible as offline. Existing roots must be safe.
-            if (Directory.Exists(path)) { using var handle = OpenDirectory(path); }
+            if (Directory.Exists(path))
+            {
+                using var handle = OpenDirectory(path);
+                var identity = string.Join(":", Native.Observe(handle.DangerousGetHandle().ToInt32()).Identity.Split(':').Take(3));
+                if (!rootIdentities.Add(identity)) throw new ArgumentException("Storage roots must not alias the same physical directory.");
+            }
+            var windowsPath = r.WindowsPath.Replace('\\', '/').TrimEnd('/');
+            if (windowsPath.Length > 0 && Roots.Any(other => other != r && other.WindowsPath.Length > 0 &&
+                (windowsPath.Equals(other.WindowsPath.Replace('\\', '/').TrimEnd('/'), StringComparison.OrdinalIgnoreCase) || windowsPath.StartsWith(other.WindowsPath.Replace('\\', '/').TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase))))
+                throw new ArgumentException("Declared Windows storage roots must not overlap.");
         }
     }
     public static string[] Components(string path)
@@ -71,15 +82,21 @@ public sealed class Storage(LibraryOptions options)
         var rc = Native.unlinkat(parent.DangerousGetHandle().ToInt32(), Components(relative)[^1], 0);
         if (rc != 0 && Marshal.GetLastPInvokeError() != 2) throw Error();
     }
+    public FileObservation Observe(string id, string path)
+    {
+        using var file = Read(id, path);
+        return Observe(file);
+    }
+    public static FileObservation Observe(FileStream file) => Native.Observe(file.SafeFileHandle.DangerousGetHandle().ToInt32());
     public (long Bytes, long Ticks) Fingerprint(string id, string path)
     {
         using var file = Read(id, path);
-        return Native.Fingerprint(file.SafeFileHandle.DangerousGetHandle().ToInt32());
+        var observation = Observe(file); return (observation.Bytes, observation.Ticks);
     }
     public string Identity(string id, string path)
     {
         using var file = Read(id, path);
-        return Native.Identity(file.SafeFileHandle.DangerousGetHandle().ToInt32());
+        return Observe(file).Identity;
     }
     public bool Exists(string id, string path)
     {
@@ -180,23 +197,14 @@ internal static class Native
     [DllImport("libc", SetLastError = true)] internal static extern int statvfs(string path, out StatVfs stat);
     [StructLayout(LayoutKind.Sequential)] internal struct StatVfs { public ulong BlockSize, FragmentSize, Blocks, Free, Available, Files, FilesFree, FilesAvailable, FileSystemId, Flags, NameMax; private ulong spare1, spare2, spare3; }
     [DllImport("libc", SetLastError = true)] private static extern int statx(int fd, string path, int flags, uint mask, IntPtr buffer);
-    internal static (long Bytes, long Ticks) Fingerprint(int fd)
+    internal static FileObservation Observe(int fd)
     {
         var buffer = Marshal.AllocHGlobal(256);
         try
         {
-            if (statx(fd, "", 0x1000, 0x7ff, buffer) != 0) throw new IOException("Cannot read file fingerprint.");
-            return (Marshal.ReadInt64(buffer, 40), DateTime.UnixEpoch.Ticks + Marshal.ReadInt64(buffer, 112) * TimeSpan.TicksPerSecond + (uint)Marshal.ReadInt32(buffer, 120) / 100);
-        }
-        finally { Marshal.FreeHGlobal(buffer); }
-    }
-    internal static string Identity(int fd)
-    {
-        var buffer = Marshal.AllocHGlobal(256);
-        try
-        {
-            if (statx(fd, "", 0x1000, 0x7ff, buffer) != 0) throw new IOException("Cannot read file identity.");
-            return $"{Marshal.ReadInt32(buffer, 136)}:{Marshal.ReadInt32(buffer, 140)}:{Marshal.ReadInt64(buffer, 32)}:{Marshal.ReadInt64(buffer, 96)}:{Marshal.ReadInt32(buffer, 104)}";
+            if (statx(fd, "", 0x1000, 0x7ff, buffer) != 0 || (Marshal.ReadInt32(buffer) & 0x3c0) != 0x3c0) throw new IOException("Filesystem does not expose the required file identity and timestamps.");
+            return new(Marshal.ReadInt64(buffer, 40), DateTime.UnixEpoch.Ticks + Marshal.ReadInt64(buffer, 112) * TimeSpan.TicksPerSecond + (uint)Marshal.ReadInt32(buffer, 120) / 100,
+                $"{Marshal.ReadInt32(buffer, 136)}:{Marshal.ReadInt32(buffer, 140)}:{Marshal.ReadInt64(buffer, 32)}:{Marshal.ReadInt64(buffer, 96)}:{Marshal.ReadInt32(buffer, 104)}");
         }
         finally { Marshal.FreeHGlobal(buffer); }
     }
@@ -207,3 +215,5 @@ internal static class Native
         finally { Marshal.FreeHGlobal(buffer); }
     }
 }
+
+public record FileObservation(long Bytes, long Ticks, string Identity);

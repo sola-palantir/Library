@@ -70,7 +70,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         foreach (var path in storage.EnumerateMedia(rootId))
         {
             await CheckCancellation(job.Id, stop);
-            var fingerprint = storage.Fingerprint(rootId, path);
+            var fingerprint = storage.Observe(rootId, path);
             await using var transaction = await db.Database.BeginTransactionAsync(stop);
             var existing = await db.Copies.SingleOrDefaultAsync(x => x.RootId == rootId && x.RelativePath == path, stop);
             if (existing == null)
@@ -85,13 +85,13 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                 existing = new PhysicalCopy { AssetId = asset.Id, RootId = rootId, RelativePath = path, Role = root.Role };
                 db.Copies.Add(existing);
             }
-            if (existing.Bytes != fingerprint.Bytes || existing.ModifiedTicks != fingerprint.Ticks)
+            if (existing.Bytes != fingerprint.Bytes || existing.ModifiedTicks != fingerprint.Ticks || existing.FileIdentity != fingerprint.Identity)
             {
                 existing.Sha256 = null;
                 var asset = await db.Assets.FindAsync([existing.AssetId], stop);
                 if (asset != null) asset.Sha256 = null;
             }
-            existing.Bytes = fingerprint.Bytes; existing.ModifiedTicks = fingerprint.Ticks;
+            existing.Bytes = fingerprint.Bytes; existing.ModifiedTicks = fingerprint.Ticks; existing.FileIdentity = fingerprint.Identity;
             existing.ScanId = job.Id; existing.State = existing.Role == "library" && existing.Sha256 != null ? "verified" : "online";
             await db.SaveChangesAsync(stop);
             await transaction.CommitAsync(stop);
@@ -105,6 +105,8 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         var plan = Decode<CopyPlan>(job.Payload);
         var source = await db.Copies.SingleAsync(x => x.Id == plan.SourceCopyId, stop);
         if (storage.Root(plan.TargetRootId).Role != "library") throw new ArgumentException("Copies must target a library root.");
+        var registered = await db.Copies.SingleOrDefaultAsync(x => x.RootId == plan.TargetRootId && x.RelativePath.ToUpper() == plan.TargetPath.ToUpper(), stop);
+        if (registered != null && (plan.Hash == null || registered.AssetId != source.AssetId || registered.Sha256 != null && registered.Sha256 != plan.Hash)) throw new IOException("The catalog already reserves this destination for a different copy. Choose a new path.");
         var temp = plan.TargetPath + $".library-{job.Id}.partial";
         // A persisted hash means data was flushed and verified before publishing. After a
         // crash, an existing destination is accepted only when its complete hash matches.
@@ -121,6 +123,8 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             storage.RemoveTemporaryIfPresent(plan.TargetRootId, temp, job.Id);
             if (storage.FreeBytes(plan.TargetRootId) < plan.Bytes + 64L * 1024 * 1024) throw new IOException("Insufficient free space (includes 64 MiB safety reserve).");
             using var input = storage.Read(source.RootId, source.RelativePath);
+            var inputObservation = Storage.Observe(input);
+            if ((inputObservation.Bytes, inputObservation.Ticks) != (plan.Bytes, plan.ModifiedTicks) || plan.SourceIdentity != null && inputObservation.Identity != plan.SourceIdentity) throw new IOException("Source changed while opening the copy input.");
             string hash;
             try
             {
@@ -141,7 +145,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
                     output.Flush(true); hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
                     if (copied != plan.Bytes) throw new IOException("Source length changed during copy.");
                 }
-                if (storage.Fingerprint(source.RootId, source.RelativePath) != before || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed during copy.");
+                if (Storage.Observe(input) != inputObservation || storage.Fingerprint(source.RootId, source.RelativePath) != before || plan.SourceIdentity != null && storage.Identity(source.RootId, source.RelativePath) != plan.SourceIdentity) throw new IOException("Source changed during copy.");
                 using var destination = storage.Read(plan.TargetRootId, temp);
                 if (await HashChecked(destination, job.Id, stop) != hash) throw new IOException("Destination SHA-256 verification failed.");
                 await CheckCancellation(job.Id, stop);
@@ -151,13 +155,18 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             }
             catch (OperationCanceledException) when (!stop.IsCancellationRequested) { storage.RemoveTemporaryIfPresent(plan.TargetRootId, temp, job.Id); throw; }
         }
-        var fingerprint = storage.Fingerprint(plan.TargetRootId, plan.TargetPath);
-        if (!await db.Copies.AnyAsync(x => x.RootId == plan.TargetRootId && x.RelativePath == plan.TargetPath, stop))
-            db.Copies.Add(new() { AssetId = source.AssetId, RootId = plan.TargetRootId, RelativePath = plan.TargetPath, Role = "library", State = "verified", Bytes = fingerprint.Bytes, ModifiedTicks = fingerprint.Ticks, Sha256 = plan.Hash });
+        var fingerprint = storage.Observe(plan.TargetRootId, plan.TargetPath);
+        if (registered == null)
+        {
+            registered = new() { AssetId = source.AssetId, RootId = plan.TargetRootId, RelativePath = plan.TargetPath, Role = "library" };
+            db.Copies.Add(registered);
+        }
+        registered.State = "verified"; registered.Bytes = fingerprint.Bytes; registered.ModifiedTicks = fingerprint.Ticks; registered.FileIdentity = fingerprint.Identity; registered.Sha256 = plan.Hash;
         var assetRecord = await db.Assets.SingleAsync(x => x.Id == source.AssetId, stop); assetRecord.Sha256 = plan.Hash;
         // Only assert a source hash when its fingerprint still matches this plan.
         try
         {
+            source.FileIdentity = storage.Identity(source.RootId, source.RelativePath);
             source.Sha256 = storage.Fingerprint(source.RootId, source.RelativePath) == (plan.Bytes, plan.ModifiedTicks) && (plan.SourceIdentity == null || storage.Identity(source.RootId, source.RelativePath) == plan.SourceIdentity) ? plan.Hash : null;
         }
         catch (IOException) { source.State = "offline"; source.Sha256 = null; }
@@ -240,6 +249,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
     }
     private async Task<string> HashChecked(Stream stream, string jobId, CancellationToken stop)
     {
+        var observation = stream is FileStream file ? Storage.Observe(file) : null;
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[1024 * 1024]; int read; long checkpoint = 0;
         await CheckCancellation(jobId, stop);
@@ -248,6 +258,8 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             hash.AppendData(buffer, 0, read); checkpoint += read;
             if (checkpoint >= 16 * 1024 * 1024) { await CheckCancellation(jobId, stop); checkpoint = 0; }
         }
+        if (stream is FileStream checkedFile && Storage.Observe(checkedFile) != observation) throw new IOException("File changed during verification.");
+        await CheckCancellation(jobId, stop);
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
     public static async Task<string> Hash(Stream stream, CancellationToken ct = default) => Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();

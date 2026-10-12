@@ -18,7 +18,7 @@ var storage = app.Services.GetRequiredService<Storage>(); storage.ValidateConfig
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<Catalog>();
-    db.Database.EnsureCreated(); db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;"); db.Database.ExecuteSqlRaw("PRAGMA synchronous=FULL;");
+    CatalogSchema.Initialize(db); db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;"); db.Database.ExecuteSqlRaw("PRAGMA synchronous=FULL;");
     if (!db.Settings.Any()) { db.Settings.Add(new Setting()); db.SaveChanges(); }
 }
 var mutations = new SemaphoreSlim(1);
@@ -97,9 +97,10 @@ app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db) =>
     var title = await db.Titles.SingleAsync(x => x.Id == edition.TitleId);
     var path = string.IsNullOrWhiteSpace(request.TargetPath) ? Naming.Plex(title, edition, asset) : request.TargetPath;
     Storage.Components(path);
+    if (await db.Copies.AnyAsync(x => x.RootId == request.TargetRootId && x.RelativePath.ToUpper() == path.ToUpper())) throw new IOException("The catalog already records a copy at this destination, possibly offline. Choose a new path.");
     if (storage.Exists(request.TargetRootId, path)) throw new IOException("Destination collision. Choose a different path.");
-    var fingerprint = storage.Fingerprint(copy.RootId, copy.RelativePath);
-    var plan = new CopyPlan(copy.Id, request.TargetRootId, path, fingerprint.Bytes, fingerprint.Ticks, SourceIdentity: storage.Identity(copy.RootId, copy.RelativePath));
+    var fingerprint = storage.Observe(copy.RootId, copy.RelativePath);
+    var plan = new CopyPlan(copy.Id, request.TargetRootId, path, fingerprint.Bytes, fingerprint.Ticks, SourceIdentity: fingerprint.Identity);
     var job = new Operation { Type = "copy", Status = "draft", Payload = JobRunner.Encode(plan) };
     db.Jobs.Add(job); db.Audit("copy-preview", job.Id); await db.SaveChangesAsync();
     return Results.Ok(new { job, plan, sourcePath = copy.RelativePath, freeBytes = storage.FreeBytes(request.TargetRootId) });
@@ -163,7 +164,7 @@ app.MapPost("/api/discs/preview", async (DiscRequest request, Catalog db) =>
     {
         var copy = await db.Copies.SingleAsync(x => x.Id == id);
         if (copy.Role != "library" || copy.Sha256 == null || copy.State == "offline") throw new ArgumentException("Disc plans require verified library copies.");
-        if (storage.Fingerprint(copy.RootId, copy.RelativePath) != (copy.Bytes, copy.ModifiedTicks)) throw new IOException("Library file changed; verify a fresh copy first.");
+        if (storage.Observe(copy.RootId, copy.RelativePath) != new FileObservation(copy.Bytes, copy.ModifiedTicks, copy.FileIdentity ?? "")) throw new IOException("Library file changed; verify a fresh copy first.");
         entries.Add(new(copy.AssetId, copy.Id, copy.RelativePath, copy.Bytes, copy.Sha256));
     }
     if (entries.Select(x => x.AssetId).Distinct().Count() != entries.Count || entries.Select(x => x.Path.ToUpperInvariant()).Distinct().Count() != entries.Count) throw new ArgumentException("Select one distinct copy and path per asset.");
@@ -211,7 +212,7 @@ app.MapPost("/api/discs/{id}/verify", async (string id, RootRequest request, Cat
 app.MapGet("/api/export", async (Catalog db) =>
 {
     await using var transaction = await db.Database.BeginTransactionAsync();
-    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = 1, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync() }));
+    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync() }));
     await transaction.CommitAsync();
     return Results.File(bytes, "application/json", "library-export.json");
 });

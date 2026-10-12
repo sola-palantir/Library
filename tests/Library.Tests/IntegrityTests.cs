@@ -249,6 +249,63 @@ public sealed class IntegrityTests : IDisposable
         var job = await Run("copy", plan); Assert.Equal("completed", job.Status);
         await using var db = factory.CreateDbContext(); Assert.Equal("verified", (await db.Copies.SingleAsync(x => x.Role == "library")).State); Assert.Equal("offline", (await db.Copies.SingleAsync(x => x.Role == "source")).State);
     }
+    [Fact]
+    public async Task ScanInvalidatesVerificationAfterSameSizeSameMtimeReplacement()
+    {
+        var source = await Source(); var plan = Plan(source, "cached.mkv"); Assert.Equal("completed", (await Run("copy", plan)).Status);
+        var path = Path.Combine(home, "library", plan.TargetPath); var timestamp = File.GetLastWriteTimeUtc(path);
+        await File.WriteAllBytesAsync(path + ".replacement", new byte[source.Bytes]); File.SetLastWriteTimeUtc(path + ".replacement", timestamp); File.Move(path + ".replacement", path, true);
+        Assert.Equal("completed", (await Run("scan", "library")).Status);
+        await using var db = factory.CreateDbContext(); var copy = await db.Copies.SingleAsync(x => x.Role == "library");
+        Assert.Null(copy.Sha256); Assert.Equal("online", copy.State); Assert.NotNull(copy.FileIdentity);
+    }
+    [Fact]
+    public async Task MissingCatalogDestinationCannotBeReusedByAnotherCopy()
+    {
+        var first = await Source(); var originalPlan = Plan(first, "reserved.mkv"); Assert.Equal("completed", (await Run("copy", originalPlan)).Status);
+        File.Move(Path.Combine(home, "library", "reserved.mkv"), Path.Combine(home, "offline-library.mkv"));
+        var second = await Source("Another.2025.mkv"); var retry = await Run("copy", Plan(second, "reserved.mkv"));
+        Assert.Equal("failed", retry.Status); Assert.Contains("catalog already reserves", retry.Error); Assert.False(File.Exists(Path.Combine(home, "library", "reserved.mkv")));
+        await using var db = factory.CreateDbContext(); Assert.Equal(first.AssetId, (await db.Copies.SingleAsync(x => x.Role == "library")).AssetId);
+    }
+    [Fact]
+    public async Task SchemaUpgradePreservesCatalogAndInvalidatesLegacyVerification()
+    {
+        var source = await Source(); Assert.Equal("completed", (await Run("copy", Plan(source, "legacy.mkv"))).Status);
+        await using var db = factory.CreateDbContext();
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Copies DROP COLUMN FileIdentity;");
+        CatalogSchema.Initialize(db); CatalogSchema.Initialize(db);
+        Assert.Equal(1, await db.Titles.CountAsync()); Assert.Equal(2, await db.Copies.CountAsync());
+        var library = await db.Copies.SingleAsync(x => x.Role == "library"); Assert.Null(library.Sha256); Assert.Null(library.FileIdentity); Assert.Equal("online", library.State);
+    }
+    [Fact]
+    public void OverlappingAndSymlinkRootsAreRejected()
+    {
+        var options = new LibraryOptions { DataPath = Path.Combine(home, "data"), Roots = [new("a", "a", Path.Combine(home, "source"), "", "source"), new("b", "b", Path.Combine(home, "source", "nested"), "", "library")] };
+        Assert.Throws<ArgumentException>(() => new Storage(options).ValidateConfiguration());
+        Directory.CreateSymbolicLink(Path.Combine(home, "linked-root"), Path.Combine(home, "source"));
+        options.Roots = [new("linked", "linked", Path.Combine(home, "linked-root"), "", "source")];
+        Assert.ThrowsAny<IOException>(() => new Storage(options).ValidateConfiguration());
+        options.Roots = [new("root", "root", "/tmp/..", "", "source")]; Assert.Throws<ArgumentException>(() => new Storage(options).ValidateConfiguration());
+    }
+    [Fact]
+    public async Task SQLiteBackupRestoresCatalogAndOperationHistory()
+    {
+        var source = await Source(); Assert.Equal("completed", (await Run("copy", Plan(source))).Status);
+        var backupPath = Path.Combine(home, "backup.db");
+        using (var current = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + Path.Combine(home, "data", "catalog.db")))
+        using (var target = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + backupPath))
+        { current.Open(); target.Open(); current.BackupDatabase(target); using var check = target.CreateCommand(); check.CommandText = "PRAGMA integrity_check"; Assert.Equal("ok", check.ExecuteScalar()); }
+        var restoredFactory = new TestFactory(new DbContextOptionsBuilder<Catalog>().UseSqlite("Data Source=" + backupPath).Options);
+        await using var restored = restoredFactory.CreateDbContext(); Assert.Equal(2, await restored.Copies.CountAsync()); Assert.Equal(2, await restored.Jobs.CountAsync()); Assert.True(await restored.History.AnyAsync(x => x.Action == "completed"));
+        Assert.NotNull((await restored.Copies.SingleAsync(x => x.Role == "library")).FileIdentity);
+    }
+    [Fact]
+    public void OverlappingDeclaredWindowsRootsAreRejected()
+    {
+        var options = new LibraryOptions { DataPath = Path.Combine(home, "data"), Roots = [new("source", "source", Path.Combine(home, "source"), "X:/Downloads", "source"), new("library", "library", Path.Combine(home, "library"), "x:/downloads/organized", "library")] };
+        Assert.Throws<ArgumentException>(() => new Storage(options).ValidateConfiguration());
+    }
     public void Dispose() { SqliteClear(); Directory.Delete(home, true); }
     private static void SqliteClear() => Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 }

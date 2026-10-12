@@ -39,6 +39,7 @@ public sealed class PhysicalCopy
     public string State { get; set; } = "online";
     public long Bytes { get; set; }
     public long ModifiedTicks { get; set; }
+    public string? FileIdentity { get; set; }
     public DateTime FirstSeenUtc { get; set; } = DateTime.UtcNow;
     public string? ScanId { get; set; }
     public string? Sha256 { get; set; }
