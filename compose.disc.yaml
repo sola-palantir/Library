@@ -1,0 +1,16 @@
+# Optional overlay for an explicitly mounted, actual read-back disc directory.
+services:
+  library:
+    environment:
+      Library__Roots__3__Id: disc
+      Library__Roots__3__Label: Disc read-back
+      Library__Roots__3__ContainerPath: /media/disc
+      Library__Roots__3__WindowsPath: ${DISC_READBACK_PATH:?Set a real mounted disc path}
+      Library__Roots__3__Role: disc
+    volumes:
+      - type: bind
+        source: ${DISC_READBACK_PATH}
+        target: /media/disc
+        read_only: true
+        bind:
+          create_host_path: false

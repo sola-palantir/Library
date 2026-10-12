@@ -1,0 +1,52 @@
+# Architecture and integrity model
+
+## Versions and deployment
+
+- .NET 10 LTS; SDK 10.0.401, ASP.NET runtime and EF Core SQLite 10.0.12. .NET 8/9 are close to their November 2026 support endpoints, so .NET 10 is the appropriate new-service baseline.
+- React 19.3.0, TypeScript 5.9.3, Vite 8.3.4, Node 24. Exact resolved frontend dependencies are in `client/package-lock.json`.
+- Single ASP.NET process serves the production React build and API. SQLite and its WAL reside on a **local persistent Docker volume**, not a Windows media bind mount or SMB share. One process/replica is supported.
+- Schema v1 uses EF `EnsureCreated` for the initially empty repository. Upgrade migrations must be introduced before changing a deployed schema; do not point a future incompatible build at an existing database without a tested migration and backup.
+
+## Catalog
+
+`Title → Edition → Asset → PhysicalCopy` separates descriptive identity from files and locations. Editions carry season/episode identifiers for TV. The initial scanner groups exact inferred title/kind/year and episode matches; provider IDs, title merge/split and edition editing are future work. Assets have physical source, library and disc copies. A disc copy does not disappear because its disc is offline.
+
+Scans stream directory entries, ignore symlinks, inspect size/mtime and update per-file observations. Unchanged files are not read or hashed. Each file observation is transactional; tracking is cleared every 100 entries to bound memory. Only a fully successful scan marks unobserved copies offline. An unavailable root fails its job and preserves observations. Scans still enumerate directory entries: filesystem watch-based incremental discovery, mount identity tracking and benchmarks on 20–30 TB are future work.
+
+Library/Inbox API results are paginated (50 default, 100 maximum); the browser renders a page at a time. Jobs and scans use a single bounded worker. Queue admission is serialized and limited to 100 pending/active operations. This favors predictable disk pressure over maximum throughput.
+
+## Filesystem safety
+
+The service runs only on Linux. `openat` walks every directory component with `O_NOFOLLOW`; anchored directory handles prevent symlink swaps from redirecting reads/writes. Final files are opened without following links, and `statx` rejects nonregular files. Root paths must be absolute, nonoverlapping and separate from the database. Windows-incompatible components, traversal, device names, alternate separators and case-insensitive destination collisions are rejected. Root IDs and container-relative paths are the operational authority; Windows paths are display mappings only.
+
+Read-only source and disc bind mounts provide an additional OS boundary. Library and staging roots alone permit creation. Temporary files are exclusively created (0600), flushed, verified and published with `renameat2(RENAME_NOREPLACE)` followed by a directory fsync. There is no hardlink code, media deletion endpoint, torrent deletion endpoint or overwrite operation. Cleanup is limited to a job's own `.library-<job-id>.partial` files and generated catalog-backup downloads.
+
+Threat boundary: roots must be controlled by the user and mounted as configured. Another process with write access to library/staging can still change data after verification. Linux case checks cannot make a case-sensitive filesystem fully emulate Windows under hostile concurrent writers. Use dedicated destinations and a single service instance. Source downloads should be complete and quiescent before copying; qBittorrent readiness is not yet queried. Root paths reused for a different drive require operator review. Cross-origin browser mutations are rejected, JSON is required, and deployment binds to loopback. The service has no login or TLS and is not intended for network exposure.
+
+## Copy journal and recovery
+
+1. Preview validates a library destination without creating filesystem directories. It records source copy ID, size, modification ticks, device/inode/ctime identity and target path in a durable **draft**. Approval queues the immutable plan ID.
+2. Worker rejects changed sources and existing destinations, checks available capacity with a 64 MiB reserve, creates a new temporary destination and streams source bytes into it with SHA-256.
+3. Flush to disk; recheck source fingerprint/identity; independently hash the destination; compare checksums. Cancellation is checked at least each 16 MiB of streaming or verification.
+4. Persist the verified hash in the journal **before** atomic no-replace publication. Register the verified physical copy afterward.
+5. Restart requeues running jobs. An incomplete copy restarts from byte zero after removing only its own partial file. An already-published destination is reconciled only if its length and full SHA-256 match the journal checkpoint. Collisions and stale previews fail visibly. Media is never rolled back by deleting it.
+
+The initial restart design intentionally re-copies an interrupted partial file instead of maintaining chunk hashes. This costs additional I/O after interruption but keeps recovery auditable. A cancelled or failed disc-staging operation can leave owned partial files; retry replaces only those partials. Complete staged files are rehashed and reused, not overwritten. Shutdown leaves running jobs recoverable; a process that cannot finish inside the grace period is handled by the same recovery path.
+
+## Metadata and interoperability
+
+Bulk changes use explicit leave/set/clear modes and a title revision. Locked fields reject changes; unlock them in a separate reviewed transaction. Preview includes before/after fields, locks and Plex naming suggestions. Applying metadata updates catalog rows only. Physical copying always needs a separate plan. The initial mapped fields are title, year, genre and plot; episode and edition information comes from filename inference.
+
+NFO import returns a metadata preview, not an immediate write. Export accepts an original document so unknown tags/attributes survive; XML DTDs and external entities are prohibited, with a 2 MB document limit. Original sidecars remain untouched. For bulk unknown-field-preserving round trips, callers must supply each original document when exporting. Provider-specific IDs, multi-valued tags, artwork, metadata provider matching and full Jellyfin round-trip compatibility require additional fixtures. Plex's current supported NFO agents are acknowledged; agent configuration must be tested on the user's version. FileBot is neither bundled nor copied.
+
+## Archive discs
+
+Packing uses decimal byte capacity minus a configurable reserve (minimum 1 MB). Whole files are sorted largest-first and placed into the first bin that fits. A file larger than usable capacity rejects the preview; no splitting or transcoding. A season can span bins. Reserve covers manifest/filesystem overhead, but actual optical capacity must still be checked in the burner.
+
+Only verified library copies with unchanged size/mtime enter a plan. Staging reads and checks every file against its immutable SHA-256 manifest, writes independent staged copies, and exports a versioned JSON manifest. The user burns the **contents** of one batch folder using BurnAware Free on Windows. The app does not launch BurnAware or claim a successful burn.
+
+A human report changes `planned` to `reported-written` and adds physical disc copies. `read-back-verified` requires reading every manifest file from a separate configured read-only disc root. A re-verification resets the status to reported-written first so failure cannot leave a stale success claim. A mounted staging folder is not evidence of an optical read-back; the mount must actually represent the written disc. No optical-drive hardware was used in this implementation.
+
+## Backup and recovery
+
+Settings offers SQLite online-backup API output and a versioned JSON catalog/history export. SQLite backup captures a consistent point including the journal while WAL mode is active. JSON export reads all tables inside a database transaction for a consistent logical snapshot; it is not yet an import format. For restore, stop the service, retain a copy of the current catalog volume, replace the catalog with the backup using an offline administrative process, remove obsolete WAL/SHM files only while stopped, then restart. A concrete Windows restore helper and tested upgrade/import workflow remain future work. Backups contain local inventory and paths: store them privately; never commit them.
