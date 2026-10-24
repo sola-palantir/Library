@@ -1,0 +1,124 @@
+.media-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 20px;
+  max-width: 1200px;
+}
+.media-card {
+  min-width: 0;
+  padding: 24px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line, #d8d8d8);
+  border-radius: 12px;
+}
+.media-card h2 {
+  margin: 0 0 12px;
+}
+.media-card p,
+.media-card li {
+  line-height: 1.6;
+}
+.media-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin: 18px 0;
+}
+.media-card label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.media-card select,
+.media-card input {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 7px;
+}
+.media-controls label {
+  flex: 1 1 240px;
+}
+.media-facts {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) 1fr;
+  gap: 8px 16px;
+}
+.media-facts dd {
+  margin: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.media-card pre {
+  padding: 12px;
+  background: #f4f5f7;
+  color: #24272b;
+  overflow: auto;
+  max-height: 360px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.media-card details {
+  margin: 12px 0;
+}
+.media-card summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.media-table-wrap {
+  overflow-x: auto;
+  margin: 18px 0;
+}
+.media-table-wrap table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+.media-table-wrap th,
+.media-table-wrap td {
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #ddd;
+}
+.media-table-wrap td {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+.media-table-wrap label + label {
+  margin-top: 10px;
+}
+.media-error {
+  color: #ffb4ab;
+}
+.media-card fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+.media-card fieldset > label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  margin: 12px 0;
+}
+.media-card code {
+  overflow-wrap: anywhere;
+}
+.media-evidence {
+  padding: 12px;
+  background: #edf2f4;
+  color: #243b43;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .media-card {
+    padding: 16px;
+  }
+  .media-facts {
+    grid-template-columns: 1fr;
+  }
+}

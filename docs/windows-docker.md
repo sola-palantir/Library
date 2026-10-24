@@ -1,24 +1,27 @@
-# Later installation on Windows Docker Desktop
+# Windows Docker control plane and native companion
 
-This guide is for a later, user-controlled installation. Nothing has been installed on the user's Windows machine. Docker Desktop container startup and physical optical drives were not tested in the implementation environment.
+The source configuration has changed; no live deployment was performed.
+`compose.yaml` now mounts only the catalog volume and selects `windows-worker`.
+The UI/API can run without access to media directories. Worker transport remains
+unconfigured, so media jobs are paused rather than routed through Linux staging
+or an export endpoint. Imported probe review, preset previews, metadata and
+catalog operations remain available. See [the worker boundary and migration
+gates](windows-worker.md) before any later installation.
 
-1. Install Docker Desktop with Linux containers using its normal Windows setup. This repository does not alter Docker, WSL or networking permissions.
-2. Clone the repository. First create three **distinct synthetic test folders**, for example `C:\LibraryFixture\downloads`, `C:\LibraryFixture\library` and `C:\LibraryFixture\staging`. Place only synthetic test files in downloads.
-3. Copy `.env.example` to `.env` and edit the mappings with forward slashes. Keep `.env` private. The host directories must already exist. Nested or identical media roots are refused by the service, and should also be avoided at the Windows host level.
-4. Review `compose.yaml`. Downloads mount read-only. Library and disc staging mount read-write. SQLite uses the named `library_catalog` local volume. The API/UI is bound to `127.0.0.1:5080`, with no privileged mode or Docker socket mount.
-5. From PowerShell in the checkout:
+Do not apply this configuration to an existing catalog without backing it up
+and reviewing pending jobs. No automatic job/catalog migration is implemented.
+The Docker API stays bound to `127.0.0.1:5080`; no native listener is created.
+No Docker permissions, mounts or services were reconfigured during qualification.
 
-   ```powershell
-   docker compose config
-   docker compose build
-   docker compose up -d
-   docker compose logs --tail 100 library
-   ```
+`compose.linux.yaml` retains the earlier local Linux executor configuration for
+qualified Linux filesystems. The tested Windows bind mount rejects required
+`renameat2(RENAME_NOREPLACE)` with `EINVAL (22)`. Do not select that backend for
+Windows media as a workaround. Isolated ext4 and the narrowly approved synthetic
+handoff test remain documented in [durable-staging.md](durable-staging.md).
 
-6. Open `http://127.0.0.1:5080`. In Settings, verify each Windows/container mapping. Scan synthetic downloads. Open Organize, preview a copy, approve it, and inspect Jobs. Test collision handling and compare source/destination hashes before considering a future live-media pilot.
-7. Stop with `docker compose down`. **Do not add `-v`** unless you deliberately intend to discard the catalog volume. Back up the catalog from Settings before any upgrade.
-
-The image runs as the .NET `app` user. If a Windows bind mount is not writable, the operation should fail visibly. Resolve ownership/sharing through your normal Docker Desktop administration; do not run the service privileged or relax source mount protection as a workaround. If Docker Desktop's filesystem does not support the required no-replace rename/fsync behavior, stop and report the failing job rather than bypassing integrity checks.
+The workflow below describes retained optical functionality and is pending
+integration with worker-owned native archive staging. It is not presently an
+end-to-end Windows deployment procedure. No physical drive has been qualified.
 
 ## Windows optical companion workflow
 

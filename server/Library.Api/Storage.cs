@@ -9,9 +9,16 @@ namespace Library.Api;
 public sealed class Storage(LibraryOptions options)
 {
     public IReadOnlyList<StorageRoot> Roots => options.Roots;
-    public StorageRoot Root(string id) => Roots.SingleOrDefault(x => x.Id == id) ?? throw new ArgumentException("Unknown storage root.");
+    public void RequireLocalExecution() => ExecutionMode.RequireLocal(options);
+    public StorageRoot Root(string id)
+    {
+        RequireLocalExecution();
+        return Roots.SingleOrDefault(x => x.Id == id) ?? throw new ArgumentException("Unknown storage root.");
+    }
     public void ValidateConfiguration()
     {
+        ExecutionMode.Validate(options);
+        if (!ExecutionMode.IsLocal(options)) return; // Root paths belong to the worker, never this container.
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Run the service in a Linux container.");
         if (Roots.Select(x => x.Id).Distinct().Count() != Roots.Count) throw new ArgumentException("Root IDs must be unique.");
         var rootIdentities = new HashSet<string>();
@@ -71,7 +78,11 @@ public sealed class Storage(LibraryOptions options)
         using var from = Parent(id, temporary, false);
         using var to = Parent(id, destination, true);
         RejectCaseCollision(to, Components(destination)[^1]);
-        if (Native.renameat2(from.DangerousGetHandle().ToInt32(), Components(temporary)[^1], to.DangerousGetHandle().ToInt32(), Components(destination)[^1], 1) != 0) throw Error();
+        if (Native.renameat2(from.DangerousGetHandle().ToInt32(), Components(temporary)[^1], to.DangerousGetHandle().ToInt32(), Components(destination)[^1], 1) != 0)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            throw new IOException($"Atomic no-replace publication failed (errno {error}: {new Win32Exception(error).Message}). Source and staged data are retained; this destination must support renameat2(RENAME_NOREPLACE). No overwrite fallback is permitted.");
+        }
         if (Native.fsync(to.DangerousGetHandle().ToInt32()) != 0) throw Error();
     }
     public void RemoveTemporary(string id, string relative, string jobId)
@@ -215,5 +226,3 @@ internal static class Native
         finally { Marshal.FreeHGlobal(buffer); }
     }
 }
-
-public record FileObservation(long Bytes, long Ticks, string Identity);

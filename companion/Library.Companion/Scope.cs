@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -13,7 +17,8 @@ public sealed class Scope : IDisposable
         Root = Path.GetFullPath(root);
         if (!Directory.Exists(Root) || (!opticalRoot && Path.GetPathRoot(Root) == Root) || Root.StartsWith("\\\\")) throw new InvalidDataException("Scope must be an existing local non-root directory.");
         string current = Path.GetPathRoot(Root)!;
-        foreach (var component in Root[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)) { current = Path.Combine(current, component); Hold(current); }
+        try { foreach (var component in Root[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)) { current = Path.Combine(current, component); Hold(current); } }
+        catch { Dispose(); throw; }
     }
     public static void Relative(string relative)
     {

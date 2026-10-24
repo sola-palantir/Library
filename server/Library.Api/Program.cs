@@ -7,20 +7,23 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 if (Environment.GetEnvironmentVariable("LIBRARY_CONFIG") is { } configPath) builder.Configuration.AddJsonFile(configPath, optional: false);
 var options = builder.Configuration.GetSection("Library").Get<LibraryOptions>() ?? new();
+ExecutionMode.Validate(options);
 RestoreReview.Validate(options.DataPath, Environment.GetEnvironmentVariable("LIBRARY_RESTORE_REVIEWED_SHA256"));
 Directory.CreateDirectory(options.DataPath);
 var databasePath = Path.Combine(options.DataPath, "catalog.db");
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<Storage>();
+builder.Services.AddSingleton<MediaInspectionService>();
+builder.Services.AddSingleton<SampleRemuxService>();
 builder.Services.AddDbContextFactory<Catalog>(b => b.UseSqlite($"Data Source={databasePath};Default Timeout=30"));
 builder.Services.AddSingleton<QBitIntegration>();
 builder.Services.AddSingleton<IQBitCopyGuard>(services => services.GetRequiredService<QBitIntegration>());
 builder.Services.AddSingleton<IMetadataProvider, SyntheticMetadataProvider>();
 builder.Services.AddSingleton<IMetadataProvider, UnconfiguredMetadataProvider>();
 builder.Services.AddSingleton<MetadataProviders>();
-builder.Services.AddHostedService<JobRunner>();
+if (ExecutionMode.IsLocal(options)) builder.Services.AddHostedService<JobRunner>();
 builder.Services.AddSingleton<PreservationService>();
-builder.Services.AddHostedService<PreservationScheduler>();
+if (ExecutionMode.IsLocal(options)) builder.Services.AddHostedService<PreservationScheduler>();
 var app = builder.Build();
 var storage = app.Services.GetRequiredService<Storage>(); storage.ValidateConfiguration();
 using (var scope = app.Services.CreateScope())
@@ -45,7 +48,7 @@ app.Use(async (context, next) =>
     var isMutation = context.Request.Path.StartsWithSegments("/api") && context.Request.Method is not ("GET" or "HEAD");
     if (isMutation) await mutations.WaitAsync(context.RequestAborted);
     try { await next(); }
-    catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or XmlException or JsonException or DbUpdateException)
+    catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or XmlException or JsonException or DbUpdateException)
     {
         if (context.Response.HasStarted) throw;
         context.Response.StatusCode = 409;
@@ -55,7 +58,8 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles(); app.UseStaticFiles();
 app.MapGet("/api/health", () => new { status = "ok", version = "0.1.0" });
-app.MapGet("/api/settings", async (Catalog db) => new { preferences = await db.Settings.SingleAsync(), roots = storage.Roots.Select(r => new { r.Id, r.Label, r.ContainerPath, r.WindowsPath, r.Role, online = Directory.Exists(r.ContainerPath) }) });
+app.MapGet("/api/execution", () => new { backend = options.ExecutionBackend, workerConnected = false, localExecution = ExecutionMode.IsLocal(options), mediaTransfer = ExecutionMode.IsLocal(options) && options.EnableSampleHandoff, message = ExecutionMode.IsLocal(options) ? "Local Linux executor; requires qualified Linux storage." : "Windows worker connection is not configured. Catalog and imported reviews remain available; media jobs are paused." });
+app.MapGet("/api/settings", async (Catalog db) => new { preferences = await db.Settings.SingleAsync(), roots = storage.Roots.Select(r => new { r.Id, r.Label, r.ContainerPath, r.WindowsPath, r.Role, online = ExecutionMode.IsLocal(options) && Directory.Exists(r.ContainerPath) }) });
 app.MapPut("/api/settings", async (Setting value, Catalog db) =>
 {
     if (value.SeedRetentionDays is < 0 or > 3650) throw new ArgumentException("Retention must be 0–3650 days.");
@@ -90,6 +94,7 @@ app.MapPost("/api/jobs/{id}/cancel", async (string id, Catalog db) =>
 });
 app.MapPost("/api/jobs/{id}/retry", async (string id, Catalog db) =>
 {
+    ExecutionMode.RequireLocal(options);
     await LimitQueue(db);
     var changed = await db.Jobs.Where(x => x.Id == id && (x.Status == "failed" || x.Status == "cancelled")).ExecuteUpdateAsync(x => x.SetProperty(j => j.Status, "queued").SetProperty(j => j.CancelRequested, false));
     if (changed == 0) throw new ArgumentException("Job is not retryable.");
@@ -99,6 +104,7 @@ app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db, IQBitCo
 {
     if (storage.Root(request.TargetRootId).Role != "library") throw new ArgumentException("Choose a library destination.");
     var copy = await db.Copies.SingleAsync(x => x.Id == request.SourceCopyId);
+    if (await db.DerivedAssets.AnyAsync(x => x.OutputAssetId == copy.AssetId && (x.Kind == "stream-copy-sample" || x.Kind == "video-encode-sample"), ct)) throw new ArgumentException("Samples cannot be promoted to library or archive copies.");
     if (copy.Role is not ("source" or "library")) throw new ArgumentException("An online source or library copy is required.");
     var asset = await db.Assets.SingleAsync(x => x.Id == copy.AssetId);
     var edition = await db.Editions.SingleAsync(x => x.Id == asset.EditionId);
@@ -116,6 +122,7 @@ app.MapPost("/api/copy/preview", async (CopyRequest request, Catalog db, IQBitCo
 });
 app.MapPost("/api/copy/{id}/commit", async (string id, Catalog db) =>
 {
+    ExecutionMode.RequireLocal(options);
     await LimitQueue(db);
     var updated = await db.Jobs.Where(x => x.Id == id && x.Type == "copy" && x.Status == "draft").ExecuteUpdateAsync(x => x.SetProperty(j => j.Status, "queued"));
     if (updated != 1) throw new ArgumentException("Preview has already been committed or is unavailable.");
@@ -229,7 +236,7 @@ app.MapPost("/api/discs/{id}/verify", async (string id, RootRequest request, Cat
 app.MapGet("/api/export", async (Catalog db) =>
 {
     await using var transaction = await db.Database.BeginTransactionAsync();
-    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync(), integrations = await db.Integrations.ToListAsync(), backupSets = await db.Set<BackupSetRecord>().ToListAsync(), physicalDiscs = await db.Set<BackupPhysicalDisc>().ToListAsync(), backupEvidence = await db.Set<BackupEvidence>().ToListAsync() }));
+    var bytes = System.Text.Encoding.UTF8.GetBytes(JobRunner.Encode(new { schemaVersion = CatalogSchema.Version, exportedUtc = DateTime.UtcNow, titles = await db.Titles.ToListAsync(), editions = await db.Editions.ToListAsync(), assets = await db.Assets.ToListAsync(), copies = await db.Copies.ToListAsync(), jobs = await db.Jobs.ToListAsync(), discs = await db.Discs.ToListAsync(), history = await db.History.ToListAsync(), settings = await db.Settings.ToListAsync(), integrations = await db.Integrations.ToListAsync(), derivedAssets = await db.DerivedAssets.ToListAsync(), processingLeases = await db.ProcessingLeases.ToListAsync(), backupSets = await db.Set<BackupSetRecord>().ToListAsync(), physicalDiscs = await db.Set<BackupPhysicalDisc>().ToListAsync(), backupEvidence = await db.Set<BackupEvidence>().ToListAsync() }));
     await transaction.CommitAsync();
     return Results.File(bytes, "application/json", "library-export.json");
 });
@@ -247,6 +254,10 @@ app.MapGet("/api/backup", async (HttpContext context) =>
     finally { File.Delete(path); } // only the generated catalog backup, never a media file
 });
 app.MapBackups();
+app.MapMediaInspection();
+app.MapSampleRemux();
+app.MapSampleHandoff();
+app.MapWorkerQualification();
 app.MapPreservation();
 app.MapFallbackToFile("index.html");
 app.Run();

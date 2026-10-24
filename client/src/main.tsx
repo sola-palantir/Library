@@ -42,6 +42,7 @@ import type {
 } from "./types";
 import "./style.css";
 import { JobProgress } from "./JobProgress";
+import { MediaReview } from "./MediaReview";
 import {
   BackupWorkspace,
   CompanionSettings,
@@ -53,11 +54,19 @@ import {
   QBitPanel,
 } from "./Integrations";
 
-type Area = "Library" | "Inbox" | "Organize" | "Discs" | "Jobs" | "Settings";
+type Area =
+  | "Library"
+  | "Inbox"
+  | "Organize"
+  | "Media review"
+  | "Discs"
+  | "Jobs"
+  | "Settings";
 const areas = [
   { name: "Library", icon: ListVideo },
   { name: "Inbox", icon: Inbox },
   { name: "Organize", icon: ArrowLeftRight },
+  { name: "Media review", icon: SlidersHorizontal },
   { name: "Discs", icon: Disc3 },
   { name: "Jobs", icon: Layers3 },
   { name: "Settings", icon: Settings2 },
@@ -101,6 +110,7 @@ function Artwork({ row, large = false }: { row: Row; large?: boolean }) {
   );
 }
 function App() {
+  const [executionBackend, setExecutionBackend] = useState("");
   const [area, setArea] = useState<Area>("Library"),
     [settings, setSettings] = useState<Settings | null>(null),
     [rows, setRows] = useState<Row[]>([]),
@@ -147,7 +157,7 @@ function App() {
         : area === "Discs"
           ? "library"
           : "";
-    const [catalog, s, j, d, sum] = await Promise.all([
+    const [catalog, s, j, d, sum, execution] = await Promise.all([
       api<{ items: Row[]; total: number }>(
         `/catalog?q=${encodeURIComponent(search)}&kind=${kind}&role=${role}&page=${page}`,
       ),
@@ -155,6 +165,7 @@ function App() {
       api<Job[]>("/jobs"),
       api<Disc[]>("/discs"),
       api<typeof summary>("/summary"),
+      api<{ backend: string }>("/execution"),
     ]);
     if (version !== loadVersion.current) return;
     setPollingFailed(false);
@@ -164,6 +175,7 @@ function App() {
     setJobs(j);
     setDiscs(d);
     setSummary(sum);
+    setExecutionBackend(execution.backend);
     setLoading(false);
     setTargetRoot(
       (old) => old || s.roots.find((r) => r.role === "library")?.id || "",
@@ -520,6 +532,13 @@ function App() {
           </div>
         </header>
         <div className="page">
+          {executionBackend === "windows-worker" && (
+            <p role="status" className="notice">
+              Media jobs are paused until the Windows worker is connected. Your
+              catalog, imported media reviews and preset previews remain
+              available.
+            </p>
+          )}
           <div className="page-heading">
             <div>
               <div className="eyebrow">YOUR COLLECTION, CONNECTED</div>
@@ -530,11 +549,13 @@ function App() {
                     ? "Incoming media"
                     : area === "Organize"
                       ? "A place for everything"
-                      : area === "Discs"
-                        ? "The disc archive"
-                        : area === "Jobs"
-                          ? "Work in progress"
-                          : "Workspace settings"}
+                      : area === "Media review"
+                        ? "Know your media"
+                        : area === "Discs"
+                          ? "The disc archive"
+                          : area === "Jobs"
+                            ? "Work in progress"
+                            : "Workspace settings"}
               </h1>
               <p>
                 {area === "Library"
@@ -543,11 +564,13 @@ function App() {
                     ? "Review downloads without disturbing the files you’re seeding."
                     : area === "Organize"
                       ? "Preview the destination. Copy independently. Verify every byte."
-                      : area === "Discs"
-                        ? "Whole files, thoughtfully packed. Ready for the shelf."
-                        : area === "Jobs"
-                          ? "Durable operations, with a history you can trust."
-                          : "Explicit roots, sensible defaults and a portable catalog."}
+                      : area === "Media review"
+                        ? "Inspect quality, preview presets and review every track."
+                        : area === "Discs"
+                          ? "Whole files, thoughtfully packed. Ready for the shelf."
+                          : area === "Jobs"
+                            ? "Durable operations, with a history you can trust."
+                            : "Explicit roots, sensible defaults and a portable catalog."}
               </p>
             </div>
             {["Library", "Inbox"].includes(area) && (
@@ -993,6 +1016,7 @@ function App() {
               </div>
             </>
           )}
+          {area === "Media review" && <MediaReview rows={rows} />}
           {area === "Discs" && (
             <>
               <div className="disc-intro">

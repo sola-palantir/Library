@@ -47,6 +47,8 @@ def restore(source: Path, target: Path):
         required = set(BASE_TABLES)
         if version >= 4:
             required.update({'BackupSets', 'BackupPhysicalDiscs', 'BackupEvidence'})
+        if version >= 6:
+            required.update({'DerivedAssets', 'ProcessingLeases'})
         if required - tables:
             raise ValueError('Missing required tables: ' + ', '.join(sorted(required - tables)))
         if src.execute('PRAGMA foreign_key_check').fetchall():

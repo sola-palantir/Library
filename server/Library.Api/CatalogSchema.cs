@@ -4,7 +4,7 @@ namespace Library.Api;
 
 public static class CatalogSchema
 {
-    public const int Version = 5;
+    public const int Version = 6;
     public static void Initialize(Catalog db)
     {
         db.Database.EnsureCreated();
@@ -51,7 +51,8 @@ public static class CatalogSchema
             }
             db.Database.ExecuteSqlRaw(BackupDomain.SchemaSql);
             db.Database.ExecuteSqlRaw(PreservationService.SchemaSql);
-            db.Database.ExecuteSqlRaw("PRAGMA user_version = 5;");
+            db.Database.ExecuteSqlRaw(DerivedCatalog.SchemaSql);
+            db.Database.ExecuteSqlRaw("PRAGMA user_version = 6;");
             transaction.Commit();
         }
         finally { db.Database.CloseConnection(); }

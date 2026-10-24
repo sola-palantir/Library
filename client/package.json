@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:media": "node --experimental-strip-types --test src/mediaPolicy.test.ts",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test:e2e": "playwright test",
-    "format:check": "prettier --check src vite.config.ts playwright.config.ts e2e"
+    "format:check": "prettier --check src vite.config.ts playwright.config.ts e2e --end-of-line auto"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

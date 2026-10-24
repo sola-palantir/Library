@@ -1,10 +1,15 @@
 # Architecture and integrity model
 
+## Windows execution refactor
+
+See [the Windows worker boundary](windows-worker.md). The API remains the single catalog writer; the companion owns local media operations. Shared policy/contracts are extracted without a schema migration. Default Windows Compose has no media mounts. Its worker connection and native FFmpeg adapter remain unavailable; Linux execution is retained as an explicit backend for qualified Linux storage.
+
 ## Versions and deployment
 
 - .NET 10 LTS; SDK 10.0.401, ASP.NET runtime and EF Core SQLite 10.0.12. .NET 8/9 are close to their November 2026 support endpoints, so .NET 10 is the appropriate new-service baseline.
 - React 19.3.0, TypeScript 5.9.3, Vite 8.3.4, Node 24. Exact resolved frontend dependencies are in `client/package-lock.json`.
 - Single ASP.NET process serves the production React build and API. SQLite and its WAL reside on a **local persistent Docker volume**, not a Windows media bind mount or SMB share. One process/replica is supported.
+- Schema v6 adds immutable `DerivedAssets` lineage and per-source `ProcessingLeases`. A transformed or partial sample has its own Asset and hash; it is never an identical PhysicalCopy of its source. JSON exports and SQLite restore validation include both tables. Existing catalog/history is retained by the additive migration.
 - Schema v5 adds optional persisted phase telemetry to the job journal with an additive, idempotent migration. Existing jobs retain their state and default to no measured progress; telemetry is never verification evidence.
 - Schema v4 adds immutable backup sets, permanent physical-disc identities and append-only evidence, and downgrades legacy folder-based optical claims to content-only evidence. Pre-v4 copy hashes are retained in history but cleared as current evidence because their old publication path did not bind verification tightly enough; create a fresh verified independent copy before new planning. Schema v3 adds non-secret integration configuration documents; the transactional v2→v3 upgrade is additive. Schema v2 adds a persisted file identity (device/inode/ctime). An idempotent transactional v1→v2 upgrade preserves catalog/history and clears legacy verification caches that lack identity evidence. SQLite `user_version` records the version and newer schemas are refused. The upgrade has regression coverage; back up before upgrades and introduce explicit migrations for subsequent changes.
 
@@ -18,7 +23,7 @@ Library/Inbox API results are paginated (50 default, 100 maximum); the browser r
 
 ## Filesystem safety
 
-The service runs only on Linux. `openat` walks every directory component with `O_NOFOLLOW`; anchored directory handles prevent symlink swaps from redirecting reads/writes. Final files are opened without following links, and `statx` rejects nonregular files. Root paths must be absolute, nonoverlapping and separate from the database. Canonical filesystem-root paths, observed aliases to the same directory and overlapping declared Windows mappings are refused. Windows-incompatible components, traversal, device names, alternate separators and case-insensitive destination collisions are rejected. Root IDs and container-relative paths are the operational authority; Windows paths supply display mappings and an additional overlap check; the configured container roots remain the operational authority. Host mappings must be truthful; arbitrary bind-mount ancestry cannot be inferred from separate container paths.
+The legacy local executor runs only on Linux. Windows-worker mode does not call these primitives. `openat` walks every directory component with `O_NOFOLLOW`; anchored directory handles prevent symlink swaps from redirecting reads/writes. Final files are opened without following links, and `statx` rejects nonregular files. Root paths must be absolute, nonoverlapping and separate from the database. Canonical filesystem-root paths, observed aliases to the same directory and overlapping declared Windows mappings are refused. Windows-incompatible components, traversal, device names, alternate separators and case-insensitive destination collisions are rejected. Root IDs and container-relative paths are the operational authority; Windows paths supply display mappings and an additional overlap check; the configured container roots remain the operational authority. Host mappings must be truthful; arbitrary bind-mount ancestry cannot be inferred from separate container paths.
 
 Read-only source and disc bind mounts provide an additional OS boundary. Library and staging roots alone permit creation. Temporary files are exclusively created (0600), flushed, verified and published with `renameat2(RENAME_NOREPLACE)` followed by a directory fsync. There is no hardlink code, media deletion endpoint, torrent deletion endpoint or overwrite operation. Cleanup is limited to a job's own `.library-<job-id>.partial` files and generated catalog-backup downloads.
 
@@ -35,6 +40,14 @@ Threat boundary: roots must be controlled by the user and mounted as configured.
 The initial restart design intentionally re-copies an interrupted partial file instead of maintaining chunk hashes. This costs additional I/O after interruption but keeps recovery auditable. A cancelled or failed disc-staging operation can leave owned partial files; retry replaces only those partials. Complete staged files are rehashed and reused, not overwritten. Shutdown leaves running jobs recoverable; a process that cannot finish inside the grace period is handled by the same recovery path.
 
 ## Metadata and interoperability
+
+Media inspection and the disabled-by-default stream-copy/x265 sample worker are described in
+[media review](media-inspection.md) and [processing safety](media-processing.md).
+Short samples remain staging assets and cannot be promoted through the copy
+worker or planned as complete-title archives. The observed Windows bind mount
+fails no-replace publication with errno 22. Later isolated ext4 staging and
+synthetic-only native Windows handoff tests have separate evidence; they do not
+qualify direct publication onto that Windows bind mount or real-title transfer.
 
 Bulk changes use explicit leave/set/clear modes and a title revision. Locked fields reject changes; unlock them in a separate reviewed transaction. Preview includes before/after fields, locks and Plex naming suggestions. Applying metadata updates catalog rows only. Physical copying always needs a separate plan. The initial mapped fields are title, year, genre and plot; episode and edition information comes from filename inference.
 

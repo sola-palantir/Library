@@ -1,6 +1,6 @@
 # Windows optical companion
 
-The Docker service remains the catalog and planning UI. `companion/Library.Companion` is a local Windows CLI using native IMAPI COM interfaces; it opens no network listener and does not automate BurnAware. Its native code and Windows x64 output compile, but **no physical drive, blank, burn, COM execution or Windows filesystem behavior has been qualified in this Linux development environment**. The actual drive model and BD-R media remain setup prerequisites. Simulation tests are not device evidence.
+The Docker service remains the catalog and planning UI. `companion/Library.Companion` is a local Windows CLI using native IMAPI COM interfaces; it opens no network listener and does not automate BurnAware. Its native code and Windows x64 output compile. **No physical drive, blank, burn or COM execution has been qualified.** The native NTFS publication/journal component has now passed isolated Windows tests; see [durable staging and publication](durable-staging.md). The actual drive model and BD-R media remain setup prerequisites. Filesystem tests and simulations are not device evidence.
 
 ## Preservation boundaries
 
@@ -12,6 +12,12 @@ The Docker service remains the catalog and planning UI. `companion/Library.Compa
 - A physical disc ID binds permanently to one exact manifest. Replacements require new physical IDs and labels and therefore a new embedded manifest/image. Failed or interrupted images and journal history are retained for review; no cleanup deletes media.
 
 ## Local setup — not performed by development
+
+The optional `receive-sample` command is separate from all optical operations.
+It receives only a specifically approved bounded sample from localhost with an
+expiring bearer grant, using native NTFS publication and content verification.
+It opens no listener, creates no pairing key and does not invoke IMAPI. See
+[sample handoff](sample-handoff.md) for the actual synthetic test and limits.
 
 On the Windows host, install the supported .NET 10 runtime and use a local, user-private state directory on durable NTFS storage with space for the complete image. Keep it separate from staging. The directory contains the journal, image and a signing key; back it up privately and do not publish it. This tool does not alter ACLs, install software, configure networking or create credentials automatically.
 
@@ -72,7 +78,7 @@ After preparing the image, run `fallback` with a fresh command ID. It rehashes t
 
 ## Durable signed receipts
 
-Journal events are immutable, individually published JSON files with monotonic `sequence` per disc, explicit `commandId`, identity/digest, image digest/size, recorder, state and timestamps. Corrupt/missing sequence records fail closed. One exclusive state-directory lease serializes companion processes. Image and event files are flushed before publication; sudden power failure still requires filesystem/backup qualification, and the journal cannot turn uncertain hardware completion into a retry permission.
+Journal events are immutable, individually published JSON files with monotonic `sequence` per disc, explicit `commandId`, identity/digest, image digest/size, recorder, state and timestamps. Corrupt/missing sequence records fail closed. One exclusive state-directory lease serializes companion processes. On Windows, an exclusively held write-through file handle spans event writing, flush, no-replace rename and a final flush, under pinned parent directories. Native publication requires local NTFS. Sudden power failure still requires filesystem/backup qualification, and the journal cannot turn uncertain hardware completion into a retry permission.
 
 CLI operations print this envelope:
 

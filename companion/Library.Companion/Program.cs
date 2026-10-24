@@ -15,6 +15,12 @@ public static class Program
             if (args[0] == "pair") { using var journal = new Journal(config.StateRoot); Console.WriteLine(Receipts.Pair(journal)); return 0; }
             if (args.Length != 3) throw new ArgumentException("Expected third argument.");
             if (args[0] == "status") { using var journal = new Journal(config.StateRoot); Console.WriteLine(JsonSerializer.Serialize(journal.Events(args[2]), Contract.Json)); return 0; }
+            if (args[0] == "receive-sample")
+            {
+                if (new FileInfo(args[2]).Length > 8192) throw new InvalidDataException("Oversized sample request.");
+                var request = JsonSerializer.Deserialize<SampleReceiveRequest>(File.ReadAllText(args[2]), Contract.Json) ?? throw new InvalidDataException("Missing sample request.");
+                Console.WriteLine(JsonSerializer.Serialize(SampleReceiver.Receive(config, request).GetAwaiter().GetResult(), Contract.Json)); return 0;
+            }
             if (args[0] is not ("prepare" or "burn" or "fallback" or "report-external" or "verify")) throw new ArgumentException("Unknown command.");
             var command = JsonSerializer.Deserialize<Command>(File.ReadAllText(args[2]), Contract.Json) ?? throw new InvalidDataException("Missing command.");
             using var optical = new NativeImapi(); Evidence result;

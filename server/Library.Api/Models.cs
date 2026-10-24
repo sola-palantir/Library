@@ -93,9 +93,12 @@ public sealed class Catalog(DbContextOptions<Catalog> options) : DbContext(optio
     public DbSet<Disc> Discs => Set<Disc>();
     public DbSet<Setting> Settings => Set<Setting>();
     public DbSet<IntegrationDocument> Integrations => Set<IntegrationDocument>();
+    public DbSet<DerivedAssetRecord> DerivedAssets => Set<DerivedAssetRecord>();
+    public DbSet<ProcessingLease> ProcessingLeases => Set<ProcessingLease>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         BackupDomain.Configure(b);
+        DerivedCatalog.Configure(b);
         b.Entity<PhysicalCopy>().HasIndex(x => new { x.RootId, x.RelativePath }).IsUnique();
         b.Entity<Edition>().HasOne<Title>().WithMany().HasForeignKey(x => x.TitleId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<Asset>().HasOne<Edition>().WithMany().HasForeignKey(x => x.EditionId).OnDelete(DeleteBehavior.Restrict);
@@ -107,6 +110,15 @@ public sealed class Catalog(DbContextOptions<Catalog> options) : DbContext(optio
 public record StorageRoot(string Id, string Label, string ContainerPath, string WindowsPath, string Role);
 public sealed class LibraryOptions
 {
+    public string ExecutionBackend { get; set; } = ExecutionMode.Linux;
+    public WorkerQualificationGrant? WorkerQualification { get; set; }
+    // Opt-in path to an already-installed binary; never downloaded or installed by Library.
+    public string? FfprobePath { get; set; }
+    public string? FfmpegPath { get; set; }
+    public bool EnableSampleRemux { get; set; }
+    public bool EnableSampleEncode { get; set; }
+    public bool EnableSampleHandoff { get; set; }
+    public SampleHandoffGrant? SampleHandoffGrant { get; set; }
     public string DataPath { get; set; } = "/data";
     public List<StorageRoot> Roots { get; set; } = [];
 }

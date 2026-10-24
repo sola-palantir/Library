@@ -45,6 +45,7 @@ public sealed class PreservationService(IDbContextFactory<Catalog> factory, Stor
     }
     public async Task<PreservationResult> AuditAsync(long copyId, CancellationToken ct = default, long maxBytes = long.MaxValue)
     {
+        storage.RequireLocalExecution();
         await gate.WaitAsync(ct);
         try { return await AuditCore(copyId, ct, maxBytes); }
         finally { gate.Release(); }

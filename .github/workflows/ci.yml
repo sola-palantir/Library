@@ -18,7 +18,7 @@ jobs:
           DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
       - run: dotnet test companion/Library.Companion.Tests -c Release
       - run: dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false
-      - run: npm ci && npm run build
+      - run: npm ci && npm run test:media && npm run build
         working-directory: client
       - run: npx playwright install --with-deps chromium
         working-directory: client

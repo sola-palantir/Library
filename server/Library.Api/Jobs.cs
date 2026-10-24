@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Library.Api;
 
-public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger, IQBitCopyGuard? guard = null, IntegrityHooks? hooks = null) : BackgroundService
+public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storage, ILogger<JobRunner> logger, IQBitCopyGuard? guard = null, IntegrityHooks? hooks = null, SampleRemuxService? remux = null) : BackgroundService
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static T Decode<T>(string json) => JsonSerializer.Deserialize<T>(json, Json) ?? throw new ArgumentException("Invalid plan.");
@@ -28,6 +28,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
     }
     public async Task Run(string id, CancellationToken stop)
     {
+        storage.RequireLocalExecution();
         await using var db = await factory.CreateDbContextAsync(stop);
         var job = await db.Jobs.SingleAsync(x => x.Id == id, stop);
         if (job.CancelRequested) { job.Status = "cancelled"; await db.SaveChangesAsync(stop); return; }
@@ -40,6 +41,9 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
             {
                 case "scan": await Scan(job, stop); break;
                 case "copy": await Copy(job, db, stop); break;
+                case "sample-remux":
+                    if (remux == null) throw new InvalidOperationException("Sample remux is unavailable.");
+                    await remux.Run(job, db, stop); break;
                 case "backup-stage": await BackupStaging.Run(job, db, storage, factory, stop); break;
                 case "disc-stage": await StageDisc(job, db, stop); break;
                 case "disc-verify": await VerifyDisc(job, db, stop); break;
@@ -123,6 +127,7 @@ public sealed class JobRunner(IDbContextFactory<Catalog> factory, Storage storag
         var plan = Decode<CopyPlan>(job.Payload);
         var progress = new JobProgress(factory, job);
         var source = await db.Copies.SingleAsync(x => x.Id == plan.SourceCopyId, stop);
+        if (await db.DerivedAssets.AnyAsync(x => x.OutputAssetId == source.AssetId && (x.Kind == "stream-copy-sample" || x.Kind == "video-encode-sample"), stop)) throw new ArgumentException("Samples cannot be promoted to library or archive copies.");
         if (storage.Root(plan.TargetRootId).Role != "library") throw new ArgumentException("Copies must target a library root.");
         var registered = await db.Copies.SingleOrDefaultAsync(x => x.RootId == plan.TargetRootId && x.RelativePath.ToUpper() == plan.TargetPath.ToUpper(), stop);
         if (registered != null && (plan.Hash == null || registered.AssetId != source.AssetId || registered.Sha256 != null && registered.Sha256 != plan.Hash)) throw new IOException("The catalog already reserves this destination for a different copy. Choose a new path.");

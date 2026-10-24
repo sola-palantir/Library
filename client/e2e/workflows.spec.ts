@@ -4,6 +4,8 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   page,
   request,
 }) => {
+  // This end-to-end case spans several durable jobs and Windows browser teardown.
+  test.setTimeout(60000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -100,7 +102,9 @@ test("catalog scan, copy preview, verified copy, metadata and disc plan", async 
   const exportResponse = await request.get("/api/export");
   expect(exportResponse.ok()).toBeTruthy();
   const exported = await exportResponse.json();
-  expect(exported.schemaVersion).toBe(5);
+  expect(exported.schemaVersion).toBe(6);
+  expect(exported.derivedAssets).toEqual([]);
+  expect(exported.processingLeases).toEqual([]);
   expect(exported.history.length).toBeGreaterThan(0);
   const copied = exported.jobs.find(
     (j: { type: string; status: string }) =>

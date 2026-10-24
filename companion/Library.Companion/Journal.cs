@@ -25,19 +25,21 @@ public sealed class Journal : IDisposable
     }
     public void Append(Evidence e)
     {
-        var count = Events(e.DiscId).Count; if (e.Sequence != count + 1) throw new InvalidOperationException("Journal sequence must increase by one."); var destination = scope.Resolve($"{e.DiscId}.{count:D8}.event.json");
-        var partial = scope.Resolve($"{e.DiscId}.{count:D8}.{Guid.NewGuid():N}.partial");
-        using (var f = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { JsonSerializer.Serialize(f, e, Contract.Json); f.Flush(true); }
+        var count = Events(e.DiscId).Count; if (e.Sequence != count + 1) throw new InvalidOperationException("Journal sequence must increase by one."); var destinationName = $"{e.DiscId}.{count:D8}.event.json";
+        var partialName = $"{e.DiscId}.{count:D8}.{Guid.NewGuid():N}.partial";
         if (OperatingSystem.IsWindows())
         {
-            // MOVEFILE_WRITE_THROUGH: do not begin device writes until journal publication reaches disk.
-            if (!MoveFileEx(partial, destination, 0x8)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Durable journal publication failed; device write is prohibited.");
+            using var f = WindowsPublication.Open(scope, partialName);
+            JsonSerializer.Serialize(f, e, Contract.Json);
+            WindowsPublication.Publish(scope, f, destinationName);
         }
-        else File.Move(partial, destination, false); // Simulation only; NativeImapi refuses non-Windows.
-
+        else // Simulation only; NativeImapi refuses non-Windows.
+        {
+            var partial = scope.Resolve(partialName);
+            using (var f = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { JsonSerializer.Serialize(f, e, Contract.Json); f.Flush(true); }
+            File.Move(partial, scope.Resolve(destinationName), false);
+        }
     }
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool MoveFileEx(string existing, string destination, uint flags);
     public string PathFor(string name) => scope.Resolve(name);
     public FileStream Read(string name) => scope.Read(name);
     public void Dispose() { lease.Dispose(); scope.Dispose(); }
