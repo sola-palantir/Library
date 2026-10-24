@@ -117,4 +117,21 @@ public sealed class SampleEncodingTests
         output["streams"]![1]!["codec_name"] = "dts"; output["streams"]![0]!["color_transfer"] = "bt709";
         Assert.Throws<IOException>(() => SampleRemuxService.ValidateInventory(Plan(), Probe(), JsonSerializer.SerializeToElement(output)));
     }
+    [Theory]
+    [InlineData("tv")]
+    [InlineData("pc")]
+    public void EncoderCannotSilentlyDeclareAnUnknownSourceColorRange(string range)
+    {
+        var output = JsonNode.Parse(Probe().GetRawText())!;
+        output["streams"]![0]!["codec_name"] = "hevc";
+        output["streams"]![0]!["profile"] = "Main";
+        output["streams"]![0]!["color_range"] = range;
+        var failure = Assert.Throws<IOException>(() => SampleRemuxService.ValidateInventory(Plan(), Probe(), JsonSerializer.SerializeToElement(output)));
+        Assert.Contains("color_range", failure.Message);
+        // The same declared value on both sides remains valid. Unknown does not
+        // mean permission to choose a range, even if an encoder has a default.
+        var source = JsonNode.Parse(Probe().GetRawText())!;
+        source["streams"]![0]!["color_range"] = range;
+        SampleRemuxService.ValidateInventory(Plan(), JsonSerializer.SerializeToElement(source), JsonSerializer.SerializeToElement(output));
+    }
 }

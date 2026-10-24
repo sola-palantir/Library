@@ -49,6 +49,37 @@ internal static class NativeProcess
         try { Check(QueryInformationJobObject(job, kind, memory, (uint)size, IntPtr.Zero)); return Marshal.PtrToStructure<T>(memory); }
         finally { Marshal.FreeHGlobal(memory); }
     }
+    // Internal validation path for an already bounded in-memory sample. This is
+    // an anonymous local pipe, never a network/control-plane media endpoint.
+    // NativeMediaProcessor still requires a pinned seekable file for source I/O.
+    public static async Task<NativeProcessEvidence> RunBufferedInput(string executable, string[] arguments, ReadOnlyMemory<byte> input,
+        Stream output, NativeProcessLimits limits, long outputLimit, CancellationToken ct)
+    {
+        if (input.Length is <= 0 or > 268435456) throw new ArgumentException("Buffered validation input exceeds the sample envelope.");
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native Windows process controls required.");
+        ct.ThrowIfCancellationRequested();
+        Check(CreatePipe(out var readHandle, out var writeHandle, IntPtr.Zero, 65536));
+        using var reader = new FileStream(readHandle, FileAccess.Read);
+        using var writer = new FileStream(writeHandle, FileAccess.Write);
+        var feed = Task.Run(async () => {
+            try { for (var offset = 0; offset < input.Length; offset += 65536) await writer.WriteAsync(input.Slice(offset, Math.Min(65536, input.Length - offset)), ct); }
+            finally { writer.Dispose(); }
+        });
+        var succeeded = false;
+        try
+        {
+            var result = await Run(executable, arguments, reader, output, limits, outputLimit, ct);
+            // Closing the parent's reader unblocks a feeder if a child exited
+            // early, including after timeout or log overflow.
+            reader.Dispose();
+            await feed; succeeded = true; return result;
+        }
+        finally
+        {
+            reader.Dispose();
+            if (!succeeded) { try { await feed; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { } }
+        }
+    }
     public static async Task<NativeProcessEvidence> Run(string executable, string[] arguments, FileStream? input, Stream output,
         NativeProcessLimits limits, long outputLimit, CancellationToken caller, Action<uint>? started = null)
     {
@@ -68,7 +99,9 @@ internal static class NativeProcess
             throw new IOException("Windows did not retain the requested job limits.");
         using var stdin = input == null ? CreateFile("NUL", 0x80000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero) : Duplicate(input.SafeFileHandle, 0x120089);
         if (stdin.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
-        if (input != null) { input.Position = 0; Check(SetFilePointerEx(stdin, 0, out _, 0)); }
+        var seekableInput = input?.CanSeek == true;
+        if (input != null && !seekableInput && GetFileType(input.SafeFileHandle) != 3) throw new IOException("Only pinned disk handles or internal anonymous validation pipes are supported.");
+        if (seekableInput) { input!.Position = 0; Check(SetFilePointerEx(stdin, 0, out _, 0)); }
         // NUL's original handle is also duplicated so its inheritance is explicit.
         using var inheritedInput = Duplicate(stdin, 0x120089);
         Check(CreatePipe(out var stdoutRead, out var stdoutWrite, IntPtr.Zero, 65536));
@@ -138,7 +171,7 @@ internal static class NativeProcess
                 Kill();
                 if (WaitForSingleObject(process, 10000) != 0) throw new IOException("Owned native process did not terminate after job kill.");
                 try { await Task.WhenAll(stdoutTask, stderrTask); } catch { /* preserve the primary failure */ }
-                if (input != null) { Check(SetFilePointerEx(stdin, 0, out _, 0)); input.Position = 0; }
+                if (seekableInput) { Check(SetFilePointerEx(stdin, 0, out _, 0)); input!.Position = 0; }
             }
         }
         finally
@@ -172,5 +205,6 @@ internal static class NativeProcess
     [DllImport("kernel32.dll", SetLastError = true)] static extern uint WaitForSingleObject(SafeFileHandle handle, uint milliseconds);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetExitCodeProcess(SafeFileHandle process, out uint code);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetFilePointerEx(SafeFileHandle handle, long distance, out long position, uint method);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern uint GetFileType(SafeFileHandle handle);
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)] static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
 }

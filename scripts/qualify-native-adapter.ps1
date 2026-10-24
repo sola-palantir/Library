@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$TestAssembly,[Parameter(Mandatory=$true)][string]$ToolsRoot,[ValidateSet('Resources','Media','Media1080','OwnerExit','All')][string]$Mode='All')
+param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$TestAssembly,[Parameter(Mandatory=$true)][string]$ToolsRoot,[ValidateSet('Resources','BufferedInput','Media','Media1080','OwnerExit','All')][string]$Mode='All')
 $ErrorActionPreference='Stop'
 if(-not $IsWindows){throw 'Native Windows qualification required.'}
 $root=[IO.Path]::GetFullPath($TestRoot)
@@ -9,6 +9,7 @@ $folder=[IO.Path]::GetDirectoryName($assembly)
 [Reflection.Assembly]::LoadFrom((Join-Path $folder 'Library.Companion.dll'))|Out-Null
 [Reflection.Assembly]::LoadFrom($assembly)|Out-Null
 if($Mode -eq 'OwnerExit'){[Library.Companion.Tests.NativeAdapterQualification]::ExitOwner($root,(Get-Process -Id $PID).Path);throw 'Expected independent-process exit.'}
+if($Mode -in @('BufferedInput','All')){[Library.Companion.Tests.NativeAdapterQualification]::BufferedInput((Get-Process -Id $PID).Path)}
 if($Mode -in @('Resources','All')){
     [Library.Companion.Tests.NativeAdapterQualification]::Resources($root,(Get-Process -Id $PID).Path)
     $crashRoot=Join-Path $root ('owner-exit-'+[Guid]::NewGuid().ToString('N'))

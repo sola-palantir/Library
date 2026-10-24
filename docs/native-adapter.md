@@ -74,6 +74,21 @@ process crashes on both sides of publication.
 See [validation evidence](validation.md) and ignored
 `.local/native-adapter-qualification/` for counts and measured output facts.
 
+The internal `RunBufferedInput` validation helper feeds an already bounded RAM
+sample through an anonymous pipe under the same Job Object and output limits.
+It adds no listener or media-transfer endpoint. The production source adapter
+still requires pinned seekable files. `-Mode BufferedInput` in the qualification
+script tests byte-identical delivery, early consumer exit and timeout; no media
+files are created. Real diagnostic data and scripts remain ignored and local.
+
+A separate supplied-copy diagnostic completed native x265 encoding but was
+rejected because an undeclared input color range became TV range. This did not
+weaken validation or enable production processing. Sparse-PGS read-ahead remains
+observable, and subtitle payloads outside the opening sample are unqualified.
+The next step is synthetic qualification of explicit/unknown color-range handling,
+followed by a bounded window containing actual PGS events. No automatic range
+assumption, larger memory cap or subtitle removal is justified by these results.
+
 ## Architecture completion checklist
 
 | Item | Implemented | Tested | Activation state |

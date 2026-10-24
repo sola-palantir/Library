@@ -1,5 +1,55 @@
 # Validation evidence
 
+## Native supplied-copy diagnosis - 2026-10-24
+
+The README and native execution foundation were pushed as
+[`54bc02a`](https://github.com/sola-palantir/Library/commit/54bc02add5002432edb3c17718f0b96b6e94b3c8).
+Its [GitHub Actions run](https://github.com/sola-palantir/Library/actions/runs/40132095355)
+passed both Linux tests/browser checks and Windows compilation. The following
+diagnostic continued separately under authorization for supplied test copies.
+
+- On the verified native FFmpeg 9.0.2 build, a ten-second null-output demux read
+  **659,709,663 bytes with English PGS**, versus **33,800,355 bytes without PGS**.
+  Demux committed memory remained about 29 MiB. A 15-second input boundary and
+  bounded queue still read 645,592,211 bytes. These controls do not eliminate
+  sparse-subtitle read-ahead. No media file was produced by these probes.
+- One ten-second x265 CRF 22/Slow/8-bit encode completed into bounded memory:
+  **5,433,491 bytes**, **596,799,488 bytes peak committed memory** (569 MiB),
+  about 69 seconds. The 1 GiB job limit was unchanged. This buffer was disposed
+  without independent validation. It established completion, not acceptance.
+- One further encode retained its buffer for independent inspection and was
+  **rejected by the existing color-range check**: the H.264 source has no declared
+  `color_range`, while HEVC output declares `tv`. No assumption that unknown
+  means limited range was made. Output was again 5,433,491 bytes, with 240 video
+  packets. All **938 Japanese DTS-HD MA packet hashes/sizes and timestamps**
+  matched the source. Both English regular/SDH PGS stream entries were retained,
+  but there were **zero subtitle events** in the opening window. Frame and
+  full-decode validation were not reached after inventory refusal.
+- Both encodes ran sequentially, each with at most one bounded in-memory output.
+  Buffers were disposed. **Zero new media files, reservations or catalog records**
+  were created. The earlier failed zero-byte partial/reservation remains retained.
+  Source size, modification time and native identity were unchanged; source
+  content was opened read-only and was not fully rehashed for this diagnostic.
+  Silo was not processed. No real media crossed a network endpoint.
+- Anonymous validation-pipe qualification passed a 1 MiB byte-exact synthetic
+  transfer, early-exit refusal and timeout termination. New regression coverage
+  rejects an unknown source range silently becoming either TV or PC range.
+
+Native completion does not identify whether FFmpeg version, process architecture
+or another changed condition explains the earlier Linux memory failure. No
+validated real-film output, perceptual-quality equivalence, active PGS payload
+preservation or full-title processing is claimed. Production activation stays
+disabled. The next bounded work is synthetic color-range handling and then a
+sample window containing actual subtitle events, without relaxing acceptance.
+Private logs/packet metadata are in ignored `.local/native-godzilla-diagnosis/`.
+
+The follow-up regression run passed **152 backend, 58 companion and 17 client-policy
+tests**, plus the client production build. Existing acceptance checks remain strict;
+the added range cases exercise both TV and PC declarations against an unknown source.
+The complete native adapter qualification also passed again: anonymous buffered
+input, eight resource/lifetime groups, synthetic remux/encode and 1080p encode,
+validation/recovery without repeat processing, and cancellation retaining its partial.
+
 ## Native processing adapter and process controls - 2026-10-24
 
 The bounded Windows executor path is implemented and qualified with generated

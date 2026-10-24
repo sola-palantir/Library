@@ -85,7 +85,7 @@ public static class SampleValidation
             foreach (var key in new[] { "codec_name", "codec_type", "profile", "width", "height", "pix_fmt", "sample_rate", "channels", "channel_layout", "color_transfer", "color_space", "color_primaries", "color_range", "extradata_hash" })
             {
                 if (encoded && key is "codec_name" or "profile" or "extradata_hash") continue;
-                if (DerivedMedia.Text(expected, key) != DerivedMedia.Text(after[i], key)) throw new IOException($"Copied stream changed {key}; validation refused.");
+                if (DerivedMedia.Text(expected, key) != DerivedMedia.Text(after[i], key)) throw new IOException($"Output stream changed {key}; validation refused.");
             }
             var actualFlags = after[i].GetProperty("disposition").EnumerateObject().Where(p => p.Value.ToString() == "1").Select(p => p.Name).ToHashSet();
             if (!actualFlags.SetEquals(plan.Streams[i].Dispositions)) throw new IOException("Track dispositions changed, including forced/accessibility flags.");

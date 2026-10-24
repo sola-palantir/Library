@@ -23,6 +23,22 @@ public static class NativeAdapterQualification
     }
     [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr VirtualAlloc(IntPtr address, nuint bytes, uint allocation, uint protect);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool VirtualFree(IntPtr address, nuint bytes, uint operation);
+    public static string BufferedInput(string powershell)
+    {
+        var input = Enumerable.Range(0, 1024 * 1024).Select(i => (byte)(i % 251)).ToArray();
+        using var output = new MemoryStream();
+        var limits = new NativeProcessLimits(512L * 1024 * 1024, 1000, 2, TimeSpan.FromSeconds(10));
+        var result = NativeProcess.RunBufferedInput(powershell, ["-NoProfile", "-NonInteractive", "-Command", "[Console]::OpenStandardInput().CopyTo([Console]::OpenStandardOutput())"], input, output, limits, input.Length, default).GetAwaiter().GetResult();
+        Require(result.ExitCode == 0 && output.ToArray().SequenceEqual(input), "Buffered validation input changed bytes.");
+        foreach (var script in new[] { "exit 0", "[Threading.Thread]::Sleep(60000)" })
+        {
+            bool refused = false;
+            try { NativeProcess.RunBufferedInput(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], input, Stream.Null, limits with { Timeout = TimeSpan.FromSeconds(2) }, 65536, default).GetAwaiter().GetResult(); }
+            catch (Exception e) when (e is IOException or TimeoutException or OperationCanceledException) { refused = true; }
+            Require(refused, "Early exit/timeout did not fail buffered input safely.");
+        }
+        return ExecutionContract.Serialize(new { bytes = input.Length, unchanged = true, earlyExitRefused = true, timeoutStopped = true, mediaFiles = 0, network = false });
+    }
     // Called only in an independent hidden harness process. Exiting deliberately
     // skips NativeProcess's finally block and tests OS kill-on-last-job-handle-close.
     public static void ExitOwner(string root, string powershell)

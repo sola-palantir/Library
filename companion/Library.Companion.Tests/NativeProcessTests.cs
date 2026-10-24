@@ -39,4 +39,8 @@ public class NativeProcessTests
         Assert.Equal("copy", args[Array.IndexOf(args, "-c") + 1]); Assert.Contains("libx265", args);
         Assert.Equal("demux", args[Array.IndexOf(args, "-enc_time_base:v:0") + 1]);
     }
+    [Fact] public async Task BufferedValidationRejectsEmptyInputBeforeProcessCreation()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => NativeProcess.RunBufferedInput("unused", [], ReadOnlyMemory<byte>.Empty, Stream.Null, NativeProcessLimits.Sample, 1024, default));
+    }
 }
