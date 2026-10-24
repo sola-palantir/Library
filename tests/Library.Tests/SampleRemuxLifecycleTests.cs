@@ -128,7 +128,7 @@ public sealed class SampleRemuxLifecycleTests
             foreach (var name in new[] { "source", "staging", "library", "data" }) Directory.CreateDirectory(Path.Combine(Home, name));
             File.WriteAllText(Input, "invented source");
             var probe = JsonSerializer.SerializeToElement(new { format = new { format_name = "matroska,webm" }, streams = new object[] {
-                new { index = 0, codec_type = "video", codec_name = "h264", pix_fmt = "yuv420p", width = 320, height = 180, field_order = "progressive", r_frame_rate = "24/1", disposition = new { } },
+                new { index = 0, codec_type = "video", codec_name = "h264", pix_fmt = "yuv420p", width = 320, height = 180, field_order = "progressive", r_frame_rate = "24/1", color_range = "tv", disposition = new { } },
                 new { index = 1, codec_type = "audio", codec_name = "pcm_s16le", disposition = new { } }
             } });
             File.WriteAllText(Path.Combine(Home, "inventory.json"), probe.GetRawText());

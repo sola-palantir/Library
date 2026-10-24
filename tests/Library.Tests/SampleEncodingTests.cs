@@ -10,7 +10,7 @@ public sealed class SampleEncodingTests
     private static JsonElement Probe() => JsonSerializer.SerializeToElement(new {
         format = new { format_name = "matroska,webm", start_time = "0", duration = "2" },
         streams = new object[] {
-            new { index = 0, codec_type = "video", codec_name = "h264", profile = "High", pix_fmt = "yuv420p", width = 1920, height = 1080, field_order = "progressive", r_frame_rate = "24000/1001", disposition = new { } },
+            new { index = 0, codec_type = "video", codec_name = "h264", profile = "High", pix_fmt = "yuv420p", width = 1920, height = 1080, field_order = "progressive", r_frame_rate = "24000/1001", color_range = "tv", disposition = new { } },
             new { index = 2, codec_type = "audio", codec_name = "dts", disposition = new { original = 1 }, tags = new { language = "jpn" } },
             new { index = 3, codec_type = "subtitle", codec_name = "hdmv_pgs_subtitle", disposition = new { hearing_impaired = 1 }, tags = new { language = "eng" } }
         }
@@ -80,6 +80,9 @@ public sealed class SampleEncodingTests
     [InlineData("r_frame_rate", "0/0")]
     [InlineData("codec_name", "hevc")]
     [InlineData("color_transfer", "smpte2084")]
+    [InlineData("color_range", "")]
+    [InlineData("color_range", "unknown")]
+    [InlineData("color_range", "unspecified")]
     public void UnsupportedSourceCannotEnableEncoding(string key, string value)
     {
         var probe = JsonNode.Parse(Probe().GetRawText())!;
@@ -122,16 +125,30 @@ public sealed class SampleEncodingTests
     [InlineData("pc")]
     public void EncoderCannotSilentlyDeclareAnUnknownSourceColorRange(string range)
     {
+        var unknown = JsonNode.Parse(Probe().GetRawText())!;
+        unknown["streams"]![0]!.AsObject().Remove("color_range");
         var output = JsonNode.Parse(Probe().GetRawText())!;
         output["streams"]![0]!["codec_name"] = "hevc";
         output["streams"]![0]!["profile"] = "Main";
         output["streams"]![0]!["color_range"] = range;
-        var failure = Assert.Throws<IOException>(() => SampleRemuxService.ValidateInventory(Plan(), Probe(), JsonSerializer.SerializeToElement(output)));
+        var failure = Assert.Throws<IOException>(() => SampleRemuxService.ValidateInventory(Plan(), JsonSerializer.SerializeToElement(unknown), JsonSerializer.SerializeToElement(output)));
         Assert.Contains("color_range", failure.Message);
         // The same declared value on both sides remains valid. Unknown does not
         // mean permission to choose a range, even if an encoder has a default.
         var source = JsonNode.Parse(Probe().GetRawText())!;
         source["streams"]![0]!["color_range"] = range;
         SampleRemuxService.ValidateInventory(Plan(), JsonSerializer.SerializeToElement(source), JsonSerializer.SerializeToElement(output));
+    }
+    [Fact]
+    public void AbsentRangeBlocksEncodeButDoesNotRelabelAStreamCopy()
+    {
+        var unknown = JsonNode.Parse(Probe().GetRawText())!;
+        unknown["streams"]![0]!.AsObject().Remove("color_range");
+        var probe = JsonSerializer.SerializeToElement(unknown);
+        Assert.Contains("color range", Assert.Throws<ArgumentException>(() => DerivedMedia.Select(probe, Request())).Message);
+        var request = Request() with { Mode = "stream-copy" };
+        var plan = Plan() with { Request = request, Streams = DerivedMedia.Select(probe, request), Encoding = null };
+        SampleRemuxService.ValidateInventory(plan, probe, probe);
+        Assert.DoesNotContain("-color_range", DerivedMedia.Arguments("input", "output", plan));
     }
 }

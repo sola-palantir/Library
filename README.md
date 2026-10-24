@@ -127,7 +127,7 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 
 The browser test performs real operations on the synthetic fixture roots. Use a dedicated fixture workspace. See [validation evidence](docs/validation.md), [architecture and safety boundaries](docs/architecture.md), [native Windows adapter qualification](docs/native-adapter.md) and [interoperability references](docs/references.md).
 
-Latest local verification: **152 backend, 58 companion and 17 client-policy tests**;
+Latest local verification: **156 backend, 59 companion and 17 client-policy tests**;
 **15 native lifecycle** and **eight resource/lifetime scenario groups**; Windows
 x64 publish and service image build. Browser workflows passed in the preceding
 milestones and were not rerun for the native-only adapter change. CI results are
@@ -142,11 +142,12 @@ of movie compression or a perceptual-quality verdict.
 
 - Persistent pairing, production receipt integration and live catalog migration
   are not enabled. SQLite remains API-owned.
-- Production native processing is synthetic-only. A separate bounded Godzilla
-  diagnostic completed a 10-second native encode in memory, then **failed color-range
-  validation**: undeclared source range became declared TV range. Sparse PGS still
-  causes extra input reads; the opening window contains no subtitle events. No
-  validated real-film output or visual-quality claim exists. See [diagnostic evidence](docs/validation.md).
+- Production native processing is synthetic-only. **Unknown source color range
+  blocks encoding before execution.** A separate Godzilla PGS window passed
+  packet, timing, inventory and decode checks using stream copy, preserving
+  unknown range and both English subtitle tracks. It was a bounded RAM-only
+  sample, not a validated real-film encode. Sparse PGS still causes extra reads;
+  rendering and visual quality remain unassessed. See [color and PGS evidence](docs/color-and-pgs-qualification.md).
 - **Silo Dolby Vision processing remains blocked.** HDR10+/DV preservation needs
   a justified encoder/container path and validation; an SDR preset is not a substitute.
 - Bounded samples use streaming MKV output and measured packet duration. Full-title

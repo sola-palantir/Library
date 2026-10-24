@@ -1,5 +1,34 @@
 # Validation evidence
 
+## Color-range policy and PGS event qualification - 2026-10-24
+
+[Detailed evidence and primary references](color-and-pgs-qualification.md)
+separate codec signaling from actual sample-value conversion. All five synthetic
+pixel-ramp cases passed. Unknown range now stops before encoding; no validator
+exception or automatic limited-range assumption was added.
+
+A synthetic seek test reproduced misleading nominal duration in streaming MKV.
+Native output now omits the estimate through Matroska live mode and continues to
+validate complete packet-derived duration at EOF with unchanged bounds. One
+bounded repeat of the same supplied-copy PGS window passed all copied-payload,
+inventory, timing and video/audio decode checks: **309 H.264, 1,203 Japanese DTS-HD
+MA, four English regular PGS and six English SDH packets**. Actual start was
+**163.830 seconds**, duration **12.887 seconds**, including keyframe pre-roll.
+
+The single 50,955,215-byte RAM output was disposed; no real output file, reservation
+or catalog record was created. Source identity/size/mtime and original presets
+remain unchanged. This is stream-copy qualification, not a real-film encode,
+subtitle-rendering or perceptual-quality claim. Production processing, persistent
+pairing and Silo Dolby Vision remain blocked. Earlier sections below record the
+preceding attempts and their limits.
+
+Final local regressions passed **156 backend, 59 companion and 17 client-policy
+tests**, plus the client build. The full actual Windows native suite passed again:
+buffered input, five color-oracle cases, the two-mode seek-duration oracle,
+resource/termination and owner-exit checks, synthetic remux/encode/recovery,
+cancellation retention, and 1080p encoding. No real-media retry beyond the one
+documented same-window repeat was performed.
+
 ## Native supplied-copy diagnosis - 2026-10-24
 
 The README and native execution foundation were pushed as

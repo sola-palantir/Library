@@ -90,7 +90,10 @@ public sealed class NativeMediaProcessor : IStagedMediaProcessor, IDisposable
         if (timebase >= 0) args[timebase + 1] = "demux";
         // Only the inherited disk input and stdout pipe are exposed. The binary
         // output is drained through the worker's hard byte limit with backpressure.
-        return args[..^1].Concat(new[] { "-protocol_whitelist", "pipe", "pipe:1" }).ToArray();
+        // Streaming MKV must not advertise an estimated duration from -t:
+        // stream-copy keyframe pre-roll can make that estimate wrong. The
+        // validator measures all packet timestamps/durations at EOF instead.
+        return args[..^1].Concat(new[] { "-live", "1", "-protocol_whitelist", "pipe", "pipe:1" }).ToArray();
     }
     public async Task ProcessAsync(Stream input, Stream output, SamplePlan plan, CancellationToken ct)
     { ProcessRuns++; await Run(false, Arguments(plan), Pinned(input), output, ExecutionContract.MaximumOutputBytes, ct); }

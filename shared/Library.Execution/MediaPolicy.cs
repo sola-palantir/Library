@@ -49,6 +49,8 @@ public static class DerivedMedia
         if (request.Mode == EncodeMode)
         {
             var video = videos[0];
+            if (Text(video, "color_range") is not ("tv" or "pc"))
+                throw new ArgumentException("Encoding requires a declared source color range; unknown range must remain unchanged or receive separate evidence-based review.");
             if (!video.TryGetProperty("width", out var width) || !video.TryGetProperty("height", out var height) || width.GetInt32() is < 16 or > 1920 || height.GetInt32() is < 16 or > 1080 || width.GetInt32() % 2 != 0 || height.GetInt32() % 2 != 0)
                 throw new ArgumentException("Encoding samples require even source dimensions up to 1920x1080; no scaling or crop is applied.");
             if (Text(video, "field_order") != "progressive" || description.Contains("Display Matrix", StringComparison.OrdinalIgnoreCase) || description.Contains("Stereo 3D", StringComparison.OrdinalIgnoreCase))
@@ -90,7 +92,7 @@ public static class DerivedMedia
     {
         ValidateProfile(plan);
         var args = new List<string> { "-nostdin", "-hide_banner", "-v", "error", "-xerror", "-max_alloc", "67108864", "-protocol_whitelist", "file", "-format_whitelist", "matroska,webm", "-noautorotate" };
-        // Sparse subtitle streams must not cause whole-title read-ahead while video encodes.
+        // Bound decoded work and queues; sparse subtitle probing can still read ahead.
         if (plan.Encoding != null) args.AddRange(["-t", (plan.Request.Seconds + 5).ToString(CultureInfo.InvariantCulture), "-thread_queue_size", "16", "-threads", "2"]);
         args.AddRange(["-i", input, "-t", plan.Request.Seconds.ToString(CultureInfo.InvariantCulture)]);
         foreach (var stream in plan.Streams) { args.Add("-map"); args.Add($"0:{stream.Index}"); }

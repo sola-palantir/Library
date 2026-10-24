@@ -37,8 +37,8 @@ remain disabled. No persistent credential or connection is required by these tes
   frame count/dimensions/timing, decode success and final file hash. Chapters remain
   omitted; samples are not archive-eligible and do not imply visual-quality parity.
 
-The bounded stdout mux creates a streaming MKV. Its header may omit duration and
-cues. Native validation therefore measures duration from all A/V packet timestamps
+The bounded stdout mux creates a streaming MKV in Matroska live mode, omitting
+estimated header duration and cues. Native validation measures duration from all A/V packet timestamps
 and durations at EOF, rejects missing/nonfinite values and applies the existing
 sample bounds. If a header duration exists it must agree with that measurement.
 Copied source duration tags are not accepted as evidence. The Linux validator's
@@ -81,13 +81,15 @@ still requires pinned seekable files. `-Mode BufferedInput` in the qualification
 script tests byte-identical delivery, early consumer exit and timeout; no media
 files are created. Real diagnostic data and scripts remain ignored and local.
 
-A separate supplied-copy diagnostic completed native x265 encoding but was
-rejected because an undeclared input color range became TV range. This did not
-weaken validation or enable production processing. Sparse-PGS read-ahead remains
-observable, and subtitle payloads outside the opening sample are unqualified.
-The next step is synthetic qualification of explicit/unknown color-range handling,
-followed by a bounded window containing actual PGS events. No automatic range
-assumption, larger memory cap or subtitle removal is justified by these results.
+A supplied-copy encode was rejected because undeclared source range became TV
+range. Encoding now refuses unknown range during source selection; synthetic
+pixel oracles distinguish metadata signaling from pixel conversion. A separate
+stream-copy window preserved actual Japanese DTS-HD MA and both English PGS
+event streams, with packet hashes, common timing and decode verified. Keyframe
+pre-roll is measured and reported. These manual diagnostics do not activate
+production jobs or add nonzero sample offsets to the product contract. See
+[color and PGS evidence](color-and-pgs-qualification.md). Sparse-PGS read-ahead,
+rendering, full-title finalization and real-film encoding remain unqualified.
 
 ## Architecture completion checklist
 

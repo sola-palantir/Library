@@ -38,9 +38,22 @@ public class NativeProcessTests
         Assert.DoesNotContain("file", args); Assert.DoesNotContain("aac", args); Assert.DoesNotContain("-vf", args);
         Assert.Equal("copy", args[Array.IndexOf(args, "-c") + 1]); Assert.Contains("libx265", args);
         Assert.Equal("demux", args[Array.IndexOf(args, "-enc_time_base:v:0") + 1]);
+        Assert.Equal("1", args[Array.IndexOf(args, "-live") + 1]);
     }
     [Fact] public async Task BufferedValidationRejectsEmptyInputBeforeProcessCreation()
     {
         await Assert.ThrowsAsync<ArgumentException>(() => NativeProcess.RunBufferedInput("unused", [], ReadOnlyMemory<byte>.Empty, Stream.Null, NativeProcessLimits.Sample, 1024, default));
+    }
+    [Fact] public void MeasuredWindowRejectsMisleadingHeaderAndRetainsDurationBounds()
+    {
+        var request = new SampleRequest(1, "stage", 1, [], [], true, true);
+        var plan = new SamplePlan(request, 1, new(10, 1, "fixture"), [new(0, "video", "h264", "", [])], "fixture", "fixture");
+        var streams = new[] { new { codec_type = "video", codec_name = "h264", index = 0, disposition = new { } } };
+        var declared = JsonSerializer.SerializeToElement(new { streams, format = new { duration = "1" } });
+        var streamed = JsonSerializer.SerializeToElement(new { streams, format = new { } });
+        Assert.Throws<IOException>(() => SampleValidation.ValidateInventory(plan, declared, declared, 1.499));
+        SampleValidation.ValidateInventory(plan, declared, streamed, 1.499);
+        Assert.Throws<IOException>(() => SampleValidation.ValidateInventory(plan, declared, streamed));
+        Assert.Throws<IOException>(() => SampleValidation.ValidateInventory(plan, declared, streamed, 3.001));
     }
 }
