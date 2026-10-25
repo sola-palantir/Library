@@ -1,5 +1,37 @@
 # Validation evidence
 
+## Read-only range, PGS rendering and HDR feasibility - 2026-10-25
+
+The [source-header evidence](color-and-pgs-qualification.md#source-header-follow-up---2026-10-25)
+now distinguishes Godzilla's absent container declaration and absent AVC range
+flag from explicit limited/full-range declarations. The inspected SPS supports
+H.264's limited-range default, but the production declared-range gate is unchanged.
+The proposed per-title policy and remaining active-SPS qualification are recorded
+in that report. No new real-film encode or remux was attempted.
+
+Actual pixel inspection of one bounded in-memory image showed readable captions
+from both English PGS source tracks. This is a source rendering check at one
+moment, separate from the previous packet-verified remux; it is not output-device
+playback or full-title sync qualification. No image/media file was saved.
+
+The [Silo feasibility read](hdr-preservation-feasibility.md) found DV profile 8,
+compatibility ID 1, and both Dolby Vision and HDR10+ side data in all 23 decoded
+frames of a one-second probe. No Silo output was created. Its processing stays
+blocked; a Dolby Vision option alone does not qualify dual-metadata preservation.
+
+The final local suite passed **156 backend, 66 companion and 17 client-policy
+tests**, plus the client production build. The bounded header reader was also
+rerun on Windows after hardening and returned identical source evidence. The
+unchanged heavy native encode/lifecycle suite was not repeated for this
+qualification-only helper/docs change; its earlier results remain below.
+Browser and Windows cross-build results are supplied by CI for the pushed commit.
+
+Both inputs retained their recorded size/mtime/native identity; original preset
+SHA-256 values were unchanged. Full source contents were not rehashed. Existing
+failed reservations and the zero-byte partial remain retained. No catalog record,
+credential, listener, persistent pairing, deployment or production activation
+was created. Private metadata and scripts stay under ignored `.local/`.
+
 ## Color-range policy and PGS event qualification - 2026-10-24
 
 [Detailed evidence and primary references](color-and-pgs-qualification.md)

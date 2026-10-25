@@ -45,6 +45,46 @@ film. The supplied Godzilla encode remains blocked. A bounded header trace hit
 the existing log cap and stopped; the cap was not raised and incomplete trace
 output was not accepted as range evidence.
 
+### Source-header follow-up - 2026-10-25
+
+A qualification-only reader now inspects a pinned, read-only prefix of at most
+4 MiB, stopping its EBML search before the first media cluster. It distinguishes
+an absent Colour/Range element from an explicit unspecified value, then reads
+AVC configuration SPS fields through the VUI range/color fields. It has bounded
+element counts, lengths and bit reads, and rejects unsupported profiles and
+malformed syntax. It is not a full Matroska/SPS validator or a production range
+resolver. Synthetic tests cover absent/explicit flags, High-profile scaling
+lists, invalid syntax and truncated/oversized input.
+
+For the supplied Godzilla copy, the actual header contains:
+
+| Evidence | Observation |
+| --- | --- |
+| Matroska video track | No Colour element; no container Range declaration |
+| AVC SPS | One configuration SPS, High profile 100, SPS ID 0 |
+| VUI | Present; `video_signal_type_present_flag` is zero |
+| Full-range/color fields | Absent, retained as null in evidence |
+| AVC configuration SHA-256 | `8143177ede70c4c2d4f86a82bc60804345d307d9bd85a18e3e8f6c145c4ea176` |
+| SPS SHA-256 | `a20397120a78c4505423f273169b81f53f70a593673d801f8b3270748d36b5ce` |
+
+The configuration hash matches the independent FFprobe extradata hash. Native
+source identity, size and modification time stayed unchanged. This establishes
+a defensible **codec-default limited-range interpretation of the inspected SPS**
+under H.264 Annex E.2.1, with no conflicting container declaration. It does not
+establish mastering intent, inspect every later in-band SPS, or supply missing
+primaries, transfer and matrix values. An absent FFprobe field alone still is
+not sufficient evidence.
+
+No encode gate or validator changed. The remaining policy decision is whether
+to permit an explicitly reviewed, source-bound codec-default interpretation for
+this title, recording that provenance and writing explicit limited-range
+signaling without a range-conversion filter. The recommended next step is that
+narrow policy, followed by checking active/in-band parameter sets for the chosen
+sample and preserving the other unknown color fields. Until implemented and
+qualified, this title remains stream-copy-only. Requiring an explicit source
+declaration instead is a valid stricter policy and leaves the encode blocked.
+Neither choice licenses a general unknown-to-limited fallback.
+
 ## Real PGS event window
 
 A separate read-only packet inspection located events in both selected English
@@ -82,9 +122,28 @@ One bounded repeat of the same real window passed:
   catalog record was created. Read-only source identity/size/mtime stayed equal;
   the full 25 GB source was not rehashed. Existing failed evidence was retained.
 
-No PGS rendering, Plex client playback, optical archive, perceptual-quality or
-full-title encode qualification is implied. Silo Dolby Vision, production
-processing, persistent pairing and real-media network handoff remain disabled.
+### Source subtitle rendering - 2026-10-25
+
+Both selected English PGS streams were decoded from the unchanged input and
+overlaid separately on generated black 1920x1080 canvases. One in-memory PNG
+placed the regular track on the left and SDH on the right, each scaled to 960x540,
+at the nominal selected time of 168.5 seconds. Actual pixel inspection showed
+readable two-line captions in both panels, without clipped glyphs in that frame.
+This independently establishes source PGS decoding/rendering at one moment;
+the tracks have distinct cues and were not treated as interchangeable.
+
+The single PNG was 39,508 bytes, SHA-256
+`fc2ca7f10f5d4cb1222c4f71c388eb9b32eb70298dc8ef9d04ffa7b709bad034`.
+Peak committed memory was 111,386,624 bytes under the existing limits. Its buffer
+was disposed; no image or media file was saved. Source identity/size/mtime matched
+before and after. The earlier packet-copy test and this source-render test are
+separate: the disposed remux was not played or visually rendered in this step.
+No whole-film subtitle synchronization, Plex/device playback, optical archive,
+perceptual-quality or full-title encode qualification is implied.
+
+[Silo's read-only feasibility check](hdr-preservation-feasibility.md) found both
+Dolby Vision and HDR10+ metadata. Its processing, production activation,
+persistent pairing and real-media network handoff remain disabled.
 
 Run the synthetic oracles with `scripts/qualify-native-adapter.ps1 -Mode Color`
 or `-Mode Window` and the same explicit root/assembly/tools arguments as the

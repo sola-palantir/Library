@@ -88,8 +88,12 @@ stream-copy window preserved actual Japanese DTS-HD MA and both English PGS
 event streams, with packet hashes, common timing and decode verified. Keyframe
 pre-roll is measured and reported. These manual diagnostics do not activate
 production jobs or add nonzero sample offsets to the product contract. See
-[color and PGS evidence](color-and-pgs-qualification.md). Sparse-PGS read-ahead,
-rendering, full-title finalization and real-film encoding remain unqualified.
+[color and PGS evidence](color-and-pgs-qualification.md). A subsequent source-only
+PGS frame render passed; whole-film timing/playback, sparse-PGS resource bounds,
+full-title finalization and real-film encoding remain unqualified. The source
+header's H.264 default is documented without enabling an unknown-range fallback.
+[Silo feasibility](hdr-preservation-feasibility.md) now records both DV and HDR10+
+in decoded frames; its processing remains blocked.
 
 ## Architecture completion checklist
 

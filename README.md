@@ -127,11 +127,13 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 
 The browser test performs real operations on the synthetic fixture roots. Use a dedicated fixture workspace. See [validation evidence](docs/validation.md), [architecture and safety boundaries](docs/architecture.md), [native Windows adapter qualification](docs/native-adapter.md) and [interoperability references](docs/references.md).
 
-Latest local verification: **156 backend, 59 companion and 17 client-policy tests**;
-**15 native lifecycle** and **eight resource/lifetime scenario groups**; Windows
-x64 publish and service image build. Browser workflows passed in the preceding
-milestones and were not rerun for the native-only adapter change. CI results are
-reported by the workflow on each pushed commit; local counts are not a CI claim.
+Latest local verification: **156 backend, 66 companion and 17 client-policy tests**,
+the client build, and the bounded Windows header/render/probe checks described
+below. Earlier native qualification passed **15 lifecycle** and **eight
+resource/lifetime scenario groups**, Windows x64 publish and service image build.
+The unchanged heavy native suite was not repeated for the latest evidence/helper
+change. CI runs browser workflows and Windows compilation on each pushed commit;
+local counts are not a CI claim.
 
 The native 1080p synthetic encode preserved 48 frames, timing and dimensions plus
 copied audio/subtitle packets, using 549 MiB peak committed memory under the 1 GiB
@@ -146,10 +148,15 @@ of movie compression or a perceptual-quality verdict.
   blocks encoding before execution.** A separate Godzilla PGS window passed
   packet, timing, inventory and decode checks using stream copy, preserving
   unknown range and both English subtitle tracks. It was a bounded RAM-only
-  sample, not a validated real-film encode. Sparse PGS still causes extra reads;
-  rendering and visual quality remain unassessed. See [color and PGS evidence](docs/color-and-pgs-qualification.md).
-- **Silo Dolby Vision processing remains blocked.** HDR10+/DV preservation needs
-  a justified encoder/container path and validation; an SDR preset is not a substitute.
+  sample, not a validated real-film encode. A source-header check supports H.264's
+  limited-range default for the inspected SPS, but no automatic range override
+  was added. Both English PGS tracks rendered at one selected moment; whole-film
+  sync, device playback and visual encode quality remain unassessed. See
+  [color and PGS evidence, including the remaining range policy decision](docs/color-and-pgs-qualification.md).
+- **Silo processing remains blocked.** A read-only interval contains both Dolby
+  Vision profile 8 and HDR10+ frame metadata. Preserving both needs a qualified
+  path; an SDR preset or Dolby Vision option alone is insufficient. See
+  [HDR preservation feasibility](docs/hdr-preservation-feasibility.md).
 - Bounded samples use streaming MKV output and measured packet duration. Full-title
   finalized muxing, Plex client/audio-chain compatibility and optical read-back
   still need separate qualification.
