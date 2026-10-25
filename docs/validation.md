@@ -1,5 +1,37 @@
 # Validation evidence
 
+## Approved Godzilla range/sample qualification - 2026-10-25
+
+[Detailed results](color-and-pgs-qualification.md#approved-short-encode-results-and-limits)
+record the user's narrow range approval, complete inspected NAL coverage and
+the distinction between reconciled technical evidence and a published asset.
+All **23 observed SPS occurrences** matched the approved hash; **1,716 slices
+across 429 pictures** resolved through verified PPS/SPS references.
+
+Two sequential 12-second RAM encodes completed. The first stopped at an early
+inventory-pipe close. The repeat fully decoded, then inventory refused absent
+source versus discovered output PGS dimensions. Read-only source presentation
+inspection resolved those fields from matching packet payloads. The unchanged
+validators then accepted retained inventory/frame/packet/duration evidence:
+**288 frames, 1,203 Japanese audio packets, 4 regular and 6 SDH English packets**.
+An exact copied-packet count through the requested clip end also passed.
+
+Video payload changed from **42,369,694 to 5,510,443 bytes (86.99% smaller)**.
+The complete buffer was **11,237,343 bytes** and measured A/V duration **12.836
+seconds**, including copied-audio pre-roll. Repeat encode time was **107.21
+seconds**, with **589,041,664 bytes** peak committed memory under unchanged limits.
+
+The disposed output has no retained whole-container hash, accepted worker
+receipt or output visual/device review. No third encode was run, no media file
+or reservation created, and no production gate changed. Source observations and
+original presets remain unchanged; older failed residuals remain retained.
+
+Local regressions passed **156 backend, 73 companion and 17 client-policy tests**
+and the client build. New synthetic cases reject header conflicts, unresolved
+PPS/SPS references, invalid/short windows, cross-source/window review reuse and
+malformed PGS presentation data. CI browser/Windows results are reported for
+the pushed commit. Production processing, pairing and Silo remain disabled.
+
 ## Read-only range, PGS rendering and HDR feasibility - 2026-10-25
 
 The [source-header evidence](color-and-pgs-qualification.md#source-header-follow-up---2026-10-25)

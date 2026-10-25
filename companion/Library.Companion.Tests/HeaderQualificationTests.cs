@@ -4,7 +4,7 @@ namespace Library.Companion.Tests;
 
 public class HeaderQualificationTests
 {
-    static byte[] Sps(bool vui, bool? full, bool high = false, int spsId = 0, int firstScalingDelta = 0)
+    internal static byte[] Sps(bool vui, bool? full, bool high = false, int spsId = 0, int firstScalingDelta = 0)
     {
         var bits = new StringBuilder(); void B(int n, int width) => bits.Append(Convert.ToString(n, 2).PadLeft(width, '0'));
         void U(int n) { var value = Convert.ToString(n + 1, 2); bits.Append('0', value.Length - 1); bits.Append(value); }

@@ -2,7 +2,7 @@
 
 ## Range policy and evidence
 
-Encoding now requires a declared `tv` or `pc` source range, in addition to the
+Production encoding requires a declared `tv` or `pc` source range, in addition to the
 existing SDR/pixel-format/profile restrictions. Missing, unknown or unspecified
 range stops during source selection, before encoding. There is no override that
 turns unknown into limited. Stream copy can retain unknown range unchanged.
@@ -41,7 +41,7 @@ The unchanged cases share SHA-256
 `988ad1e27179852c841c332fd3faf59f04d4a5db5001600ccf9248d48a3542c7`.
 The conversion control differs. This proves the diagnostic distinguishes
 signaling from conversion; it does not prove the intended range of an untagged
-film. The supplied Godzilla encode remains blocked. A bounded header trace hit
+film. Godzilla originally remained blocked pending review. A bounded header trace hit
 the existing log cap and stopped; the cap was not raised and incomplete trace
 output was not accepted as range evidence.
 
@@ -75,15 +75,97 @@ establish mastering intent, inspect every later in-band SPS, or supply missing
 primaries, transfer and matrix values. An absent FFprobe field alone still is
 not sufficient evidence.
 
-No encode gate or validator changed. The remaining policy decision is whether
-to permit an explicitly reviewed, source-bound codec-default interpretation for
-this title, recording that provenance and writing explicit limited-range
-signaling without a range-conversion filter. The recommended next step is that
-narrow policy, followed by checking active/in-band parameter sets for the chosen
-sample and preserving the other unknown color fields. Until implemented and
-qualified, this title remains stream-copy-only. Requiring an explicit source
-declaration instead is a valid stricter policy and leaves the encode blocked.
-Neither choice licenses a general unknown-to-limited fallback.
+The user subsequently approved a source-bound, short-window interpretation of
+that default, conditional on checking active/in-band parameter sets throughout
+the segment. This is an offline qualification exception, not a general
+unknown-to-limited fallback. Production selection and all output validators
+remain unchanged. Other unknown color fields are preserved.
+
+### Reviewed source and active parameter sets - 2026-10-25
+
+`ReviewedRangeQualification` exists only in the companion qualification assembly.
+It binds the explicit review to native source identity/size/mtime, the raw probe
+signature, AVC configuration and SPS hashes, and the selected start/duration.
+The harness keeps the source handle pinned read-only through inspection,
+encoding and validation. Applying the review to another observation, inventory
+or window fails. No HTTP route, credential, persistent permission or production
+worker activation was added.
+
+A 17-second video-only stream-copy inspection beginning at the requested seek
+retained pre-roll and used FFmpeg's
+[AVC Annex B conversion](https://ffmpeg.org/ffmpeg-bitstream-filters.html#h264_005fmp4toannexb).
+It produced one bounded RAM buffer, disposed before encoding. The scanner
+examined all NAL units, including repeated/in-band parameters and configuration
+inserted by that bitstream filter. Every slice's PPS reference must resolve to
+the approved SPS. Unsupported NAL types, conflicting SPS hashes, unresolved
+references, non-IDR starts and incomplete bounded coverage are refused.
+
+The actual scan covered **2,237 NAL units, 23 SPS occurrences, 23 PPS occurrences,
+1,716 slices and 429 pictures**. All observed SPS hashes matched the approved
+absent-signal SPS; no conflicting range or container declaration appeared.
+The 62,559,106-byte inspection buffer had SHA-256
+`8b95bf7470240a93e23c4a0a2b0f7a5387053cd7e2e8463b354ca8f81e4d2f9c`.
+This covers the chosen 12-second segment plus seek pre-roll and look-ahead;
+it is not a whole-title parameter-set scan or full H.264 conformance validator.
+
+The qualification comparison view labels only the reviewed range as `tv` and
+records the requested window origin. Raw probe JSON is retained separately.
+Output explicitly signals limited range; no range-conversion, crop or scaling
+filter is used. The fixed CRF 22/Slow/8-bit sample profile, stream selection,
+resource limits and shared frame/packet/inventory/decode gates still apply.
+
+### Approved short encode: results and limits
+
+The requested window began at **164.664 seconds** for 12 seconds. Two sequential
+RAM-only encodes completed with the original 1080p preset's fixed starting point:
+libx265, CRF 22, Slow, 8-bit, original dimensions and timing, Japanese audio and
+both English PGS tracks copied. Only one output buffer existed at a time.
+
+The first was not accepted: the inventory probe exited before consuming the
+complete pipe. The harness now counts packets through EOF. The repeat completed
+and full video/audio decoding passed, but inventory correctly refused a second
+asymmetry: the early source probe had no PGS canvas dimensions, whereas the
+output probe discovered them. The output buffer was disposed after that refusal.
+No third encode was run to resolve this.
+
+Source-only inspection subsequently read the actual PGS presentation segments,
+verified their SHA-256/size/timestamp against the retained source packet evidence,
+and established consistent **1920x1080** canvases for both English streams. This
+uses the [PGS presentation video descriptor](https://github.com/FFmpeg/FFmpeg/blob/n9.0.2/libavcodec/pgssubdec.c#L362-L377),
+not an assumption based on movie dimensions. A bounded parser rejects malformed,
+unsupported or conflicting segments. Filling the missing source comparison
+fields from that evidence allowed the unchanged inventory validator to pass.
+Raw probe data remains intact, with the separate provenance recorded.
+
+The retained metadata from the repeat then passed all shared technical checks:
+
+| Measurement | Result |
+| --- | --- |
+| Video frames | 288, preserving 1920x1080, YUV420P, aspect and relative timing |
+| Source frame timestamps | 164.664 through 176.635 seconds |
+| Common video/audio/subtitle shift | -163.840 seconds |
+| Video packet payload | 42,369,694 to 5,510,443 bytes; **86.99% smaller** |
+| Copied Japanese DTS-HD MA | 1,203 packets, byte hashes/sizes/timing identical |
+| Copied English regular / SDH PGS | 4 / 6 packets, byte hashes/sizes/timing identical |
+| Measured A/V packet duration | 12.836 seconds, including copied-audio pre-roll |
+| Complete output buffer | 11,237,343 bytes |
+| Repeat encode time / peak committed memory | 107.21 seconds / 589,041,664 bytes (561.75 MiB) |
+
+An additional exact-count check matched every copied packet from the retained
+seek window through the requested clip end at 176.664 seconds, including the
+last audio packet at 176.660. No crop, scale, color-range conversion, audio
+encoding or subtitle conversion occurred. Unknown primaries/transfer/matrix
+remained unknown; the reviewed range alone became explicit limited range.
+
+These are reconciled technical sample results, **not an accepted worker receipt
+or retained deliverable**. The whole-output SHA-256 was not captured before the
+inventory refusal disposed the buffer. The sample was not published, archived
+or registered in the catalog. The output was not visually reviewed or rendered
+on a Plex device; earlier source PGS rendering is separate evidence. The 86.99%
+video reduction is specific to these 288 frames and says nothing by itself about
+perceptual quality or whole-film savings. Production processing, pairing and Silo
+processing remain disabled. Inputs, presets and earlier failed residuals remain
+unchanged. No new media files or reservations were created.
 
 ## Real PGS event window
 
