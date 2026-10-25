@@ -1,5 +1,28 @@
 # Validation evidence
 
+## RF20 comparison - 2026-10-25
+
+[The RF20/RF22 comparison](color-and-pgs-qualification.md#rf20-versus-rf22-comparison---2026-10-25)
+changed only the approved short test's video CRF. Source identity/header/NAL
+evidence and the RF22 comparison images were rechecked before one RF20 encode.
+All preservation, frame, duration, complete-output hash and video/audio decode
+checks passed while the output remained available. It retained 288 frames,
+1,203 Japanese audio packets, and four regular/six SDH English PGS packets.
+
+The **14,867,032-byte** output is **32.30% larger than RF22**. Its video payload
+is **78.43% below the source segment**. Encode time was **94.73 seconds** and peak
+committed memory **589,357,056 bytes**. Actual matched-frame/native-crop inspection
+found a modest grain/fine-texture benefit over RF22, still smoother than source;
+both subtitle renders matched. Motion was not viewed. The terminal local
+acceptance preceded buffer disposal; no production receipt or media file exists.
+
+Local regressions passed **156 backend, 82 companion and 17 client-policy tests**
+and the client build. Four new tests isolate the offline RF20 variation, require
+explicit bounded review and confirm production still rejects the RF20 test profile.
+The unchanged heavy native suites were not repeated. CI browser/Windows results
+are reported for the pushed commit. Inputs, presets and old residuals remain
+preserved; production processing, pairing, Silo and full-title work stay disabled.
+
 ## Retained sample acceptance - 2026-10-25
 
 [The complete sample record](color-and-pgs-qualification.md#retained-sample-technical-acceptance-and-visual-review---2026-10-25)

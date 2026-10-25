@@ -101,6 +101,11 @@ quality and device playback remain unassessed. The qualification-only
 the output until the decision. Run `-Mode Comparison` for its synthetic native
 render/lifetime preflight; this mode does not read real media or issue a receipt.
 The production unknown-range gate remains unchanged.
+A later offline RF20 comparison changed only the CRF argument for that same
+approved short window. It passed the retained-output checks, with a modest static
+texture benefit and 32.30% more total bytes than RF22. Its test-only profile is
+explicitly refused by production validation; original presets and the product's
+fixed RF22 profile are unchanged. Motion and device playback were not reviewed.
 [Silo feasibility](hdr-preservation-feasibility.md) now records both DV and HDR10+
 in decoded frames; its processing remains blocked.
 

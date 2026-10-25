@@ -230,6 +230,83 @@ created. Source identity/size/mtime stayed unchanged while pinned; full source
 contents were not rehashed. Presets and old residuals remain preserved. Production
 processing, persistent pairing, real-media handoff and Silo processing remain off.
 
+### RF20 versus RF22 comparison - 2026-10-25
+
+The user approved one RF20 comparison of the same Godzilla source/window. Here
+RF20 means **libx265 CRF 20**, retaining Slow, 8-bit output, dimensions, timing,
+stream maps and resource limits. It is a test variation of the imported preset,
+not a claim that every HandBrake RF setting reproduces identical FFmpeg output.
+The original exported preset files were not edited.
+
+`ReviewedQualityQualification` lives only in the test assembly. It starts with
+the unchanged validated RF22 plan, records its digest and original profile, and
+changes just the video CRF argument to 20. The validation plan records the actual
+RF20 test profile. Production rejects that profile; no UI setting, production
+override or expanded pairing/access was added. Four synthetic tests verify the
+single-argument difference, unchanged baseline, bounded explicit review and
+production refusal.
+
+Before encoding, native source identity and the approved configuration/SPS were
+rechecked. The full bounded NAL scan reproduced the same hash and counts above.
+PGS canvas and source rendering checks passed. The retained RF22 comparison PNGs
+matched their recorded hashes. The complete command was compared with the
+accepted RF22 command: only the value after `-crf:v:0` changed, from 22 to 20.
+There was one fresh RF20 output; RF22 was not regenerated.
+
+| Measurement, same 12-second requested window | RF22 baseline | RF20 comparison |
+| --- | ---: | ---: |
+| Complete output bytes | 11,237,343 | 14,867,032 |
+| Encoded video packet bytes | 5,510,443 | 9,139,576 |
+| Video payload reduction from 42,369,694 source bytes | 86.99% | 78.43% |
+| Encode time | 79.80 s | 94.73 s |
+| Peak committed memory | 589,148,160 bytes (561.86 MiB) | 589,357,056 bytes (562.05 MiB) |
+| Video frames / measured packet duration | 288 / 12.836 s | 288 / 12.836 s |
+
+RF20's complete output is **32.30% larger**, its video payload **65.86% larger**,
+and this single encode took **18.70% longer** than the recorded RF22 run. Timing
+is one observation per setting, not a controlled throughput benchmark or a
+whole-film estimate. The same copied audio/subtitles contribute a fixed part of
+the total size, so container and video percentage differences are separate.
+
+Both variants passed inventory, exact frame count/dimensions/timing, complete
+copied-packet hash/size/count/timing, packet-duration and full video/audio decode
+checks. RF20 retained all **1,203 Japanese DTS-HD MA, four English regular PGS
+and six English SDH packets**, with the same -163.840-second common shift. No
+audio encoding or subtitle conversion occurred. Its complete output SHA-256 is:
+
+`fc33da9e36d39245b50d3026fd8c4394f1452b4b7f649bdcc83c5b015d2e8910`
+
+Actual pixel inspection compared source/RF20 frame pairs and native 640x480 crops
+at frame indices 12, 120 and 240, then the recorded RF22 and fresh RF20 crops at
+those same frames. RF20 retains somewhat more grain and fine texture, especially
+in clothing, walls and foliage, but still looks smoother than the source. The
+improvement is modest in these stills; it does not prove an equivalent benefit
+in motion or justify a universal default. No obvious gross framing, brightness
+or color shift appeared. Both English PGS renders matched source appearance,
+placement and text at the inspected cue near 168.5 seconds.
+
+**Motion was not viewed.** The available inspection surface supplies static
+images, and the verified local tool bundle contains FFmpeg/FFprobe, without a
+video-review surface that exposes temporal playback for inspection. Complete
+decode and timing checks establish technical facts, not motion quality. No
+PSNR/SSIM/VMAF score is being used as a substitute. Absolute color accuracy,
+whole-title quality/savings, subtitle synchronization across the film and actual
+Plex-device playback remain unqualified.
+
+The output remained in RAM until all checks and visual review completed. Five
+diagnostic PNGs were bound to its hash by manifest text SHA-256
+`b9cfbdf2a16c5d42706aacc25b650c4bd760b8261cfec30e4823e6ee922ccc4c`.
+Image hashes and the entire output were rechecked before recording
+`accepted-local-sample`, then the buffer was disposed. This is local technical
+acceptance with limited static visual review, not approval of the quality
+tradeoff on the user's behalf or a production worker/catalog receipt.
+
+No encoded movie file, reservation, publication or catalog record was created.
+The five PNGs, report and source-bound script stay private under ignored `.local/`.
+Source observations and original preset hashes remained unchanged; older
+residuals were preserved. Production processing, persistent pairing, real-media
+network transfer, Silo encoding and full-title processing remain disabled.
+
 ## Real PGS event window
 
 A separate read-only packet inspection located events in both selected English

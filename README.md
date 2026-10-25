@@ -127,7 +127,7 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 
 The browser test performs real operations on the synthetic fixture roots. Use a dedicated fixture workspace. See [validation evidence](docs/validation.md), [architecture and safety boundaries](docs/architecture.md), [native Windows adapter qualification](docs/native-adapter.md) and [interoperability references](docs/references.md).
 
-Latest local verification: **156 backend, 78 companion and 17 client-policy tests**,
+Latest local verification: **156 backend, 82 companion and 17 client-policy tests**,
 the client build, and the bounded Windows header/render/probe checks described
 below. Earlier native qualification passed **15 lifecycle** and **eight
 resource/lifetime scenario groups**, Windows x64 publish and service image build.
@@ -155,6 +155,12 @@ of movie compression or a perceptual-quality verdict.
   quality parity, whole-film savings or device qualification. No worker/catalog
   receipt or published movie was created. No blanket
   range fallback was added. See [results and qualification limits](docs/color-and-pgs-qualification.md).
+- A separately approved **RF20 comparison** changed only libx265 CRF 22 to 20 for
+  that same 12-second segment. It passed the same technical checks. Total output
+  was 14,867,032 bytes versus RF22's 11,237,343 (**32.3% larger**), with modestly
+  better grain/fine texture in the inspected native crops. Motion was not viewed;
+  this does not establish quality parity or device playback. The exported presets
+  and production RF22 profile are unchanged. See [RF20 comparison](docs/color-and-pgs-qualification.md#rf20-versus-rf22-comparison---2026-10-25).
 - **Silo processing remains blocked.** A read-only interval contains both Dolby
   Vision profile 8 and HDR10+ frame metadata. Preserving both needs a qualified
   path; an SDR preset or Dolby Vision option alone is insufficient. See
