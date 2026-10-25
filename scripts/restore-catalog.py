@@ -80,7 +80,13 @@ def restore(source: Path, target: Path):
         with destination.open('rb') as file:
             os.fsync(file.fileno())
         with destination.open('rb') as file:
-            checksum = hashlib.file_digest(file, 'sha256').hexdigest()
+            if hasattr(hashlib, 'file_digest'):
+                checksum = hashlib.file_digest(file, 'sha256').hexdigest()
+            else:
+                digest = hashlib.sha256()
+                for block in iter(lambda: file.read(1024 * 1024), b''):
+                    digest.update(block)
+                checksum = digest.hexdigest()
         report = {'schemaVersion': version, 'tableCount': len(tables), 'sha256': checksum, 'status': 'restored-offline', 'warning': 'Review roots, disable scheduling and reconcile pending jobs before starting. No media was restored or verified.'}
         # Only replace our own metadata marker after the catalog and report are durable.
         complete_path = target / '.restore-report.complete'

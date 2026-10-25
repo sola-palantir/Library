@@ -6,13 +6,15 @@ COPY client/ ./
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+ARG LIBRARY_VERSION=0.2.0-preview.1
 WORKDIR /src
+COPY Directory.Build.props ./
 COPY server/Library.Api/Library.Api.csproj server/Library.Api/
 COPY shared/Library.Execution/Library.Execution.csproj shared/Library.Execution/
 RUN dotnet restore server/Library.Api/Library.Api.csproj
 COPY server/ server/
 COPY shared/ shared/
-RUN dotnet publish server/Library.Api -c Release --no-restore -o /out /p:UseAppHost=false
+RUN dotnet publish server/Library.Api -c Release --no-restore -o /out /p:UseAppHost=false /p:Version=${LIBRARY_VERSION}
 COPY --from=web /src/client/dist /out/wwwroot
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
@@ -26,3 +28,4 @@ ENV ASPNETCORE_HTTP_PORTS=8080 Library__DataPath=/data DOTNET_EnableDiagnostics=
 ENV Library__FfprobePath=/usr/bin/ffprobe Library__FfmpegPath=/usr/bin/ffmpeg
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Library.Api.dll"]
+HEALTHCHECK --interval=15s --timeout=12s --start-period=30s --retries=3 CMD ["dotnet", "Library.Api.dll", "--deployment", "health"]

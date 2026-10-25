@@ -46,3 +46,6 @@ jobs:
           global-json-file: global.json
       - run: dotnet publish companion/Library.Companion -c Release -r win-x64 --self-contained false
       # Compilation only: no pairing, COM calls, device discovery or optical writes.
+      - run: dotnet test tests/Library.Tests -c Release --filter FullyQualifiedName~DeploymentTests
+      - run: dotnet publish deploy/Library.Manager -c Release -r win-x64 --self-contained true
+      # Synthetic NTFS lifecycle tests only. No Docker Desktop or live installation.

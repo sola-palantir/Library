@@ -4,12 +4,18 @@ using Library.Api;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
+if (args.FirstOrDefault() == "--deployment") { Environment.ExitCode = await Deployment.Command(args); return; }
 var builder = WebApplication.CreateBuilder(args);
 if (Environment.GetEnvironmentVariable("LIBRARY_CONFIG") is { } configPath) builder.Configuration.AddJsonFile(configPath, optional: false);
 var options = builder.Configuration.GetSection("Library").Get<LibraryOptions>() ?? new();
 ExecutionMode.Validate(options);
 RestoreReview.Validate(options.DataPath, Environment.GetEnvironmentVariable("LIBRARY_RESTORE_REVIEWED_SHA256"));
 Directory.CreateDirectory(options.DataPath);
+if (Environment.GetEnvironmentVariable("LIBRARY_MANAGED_START_PAUSED") == "1")
+{
+    if (ExecutionMode.IsLocal(options)) throw new InvalidOperationException("Managed deployment requires Windows worker mode.");
+    Deployment.Pause(options);
+}
 var databasePath = Path.Combine(options.DataPath, "catalog.db");
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<Storage>();
@@ -47,7 +53,12 @@ app.Use(async (context, next) =>
     }
     var isMutation = context.Request.Path.StartsWithSegments("/api") && context.Request.Method is not ("GET" or "HEAD");
     if (isMutation) await mutations.WaitAsync(context.RequestAborted);
-    try { await next(); }
+    try
+    {
+        if (isMutation && Deployment.Paused(options) && !context.Request.Path.StartsWithSegments("/api/deployment"))
+        { context.Response.StatusCode = 503; await context.Response.WriteAsJsonAsync(new { error = "Library is paused for maintenance; no new changes are accepted." }); return; }
+        await next();
+    }
     catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or XmlException or JsonException or DbUpdateException)
     {
         if (context.Response.HasStarted) throw;
@@ -57,7 +68,8 @@ app.Use(async (context, next) =>
     finally { if (isMutation) mutations.Release(); }
 });
 app.UseDefaultFiles(); app.UseStaticFiles();
-app.MapGet("/api/health", () => new { status = "ok", version = "0.1.0" });
+app.MapGet("/api/health", () => new { status = "ok", version = Library.Execution.ReleaseInfo.Version });
+app.MapDeployment();
 app.MapGet("/api/execution", () => new { backend = options.ExecutionBackend, workerConnected = false, localExecution = ExecutionMode.IsLocal(options), mediaTransfer = ExecutionMode.IsLocal(options) && options.EnableSampleHandoff, message = ExecutionMode.IsLocal(options) ? "Local Linux executor; requires qualified Linux storage." : "Windows worker connection is not configured. Catalog and imported reviews remain available; media jobs are paused." });
 app.MapGet("/api/settings", async (Catalog db) => new { preferences = await db.Settings.SingleAsync(), roots = storage.Roots.Select(r => new { r.Id, r.Label, r.ContainerPath, r.WindowsPath, r.Role, online = ExecutionMode.IsLocal(options) && Directory.Exists(r.ContainerPath) }) });
 app.MapPut("/api/settings", async (Setting value, Catalog db) =>

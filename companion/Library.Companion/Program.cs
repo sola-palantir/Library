@@ -8,6 +8,7 @@ public static class Program
     {
         try
         {
+            if (args.SequenceEqual(new[] { "--version" })) { Console.WriteLine(JsonSerializer.Serialize(Library.Execution.ReleaseInfo.Describe())); return 0; }
             if (args.Length == 1 && args[0] == "devices") { using var device = new NativeImapi(); Console.WriteLine(JsonSerializer.Serialize(device.ListRecorders(), Contract.Json)); return 0; }
             if (args.Length < 2) throw new ArgumentException("Usage: devices | pair <config.json> | status <config.json> <disc-id> | prepare|burn|fallback|report-external|verify <config.json> <command.json>");
             var config = JsonSerializer.Deserialize<CompanionConfig>(File.ReadAllText(args[1]), Contract.Json) ?? throw new InvalidDataException("Missing config.");

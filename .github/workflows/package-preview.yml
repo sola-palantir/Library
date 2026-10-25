@@ -1,0 +1,34 @@
+name: Package unsigned preview (no publication)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Explicit preview version, e.g. 0.2.0-preview.1'
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Test contracts
+        run: dotnet test tests/Library.Tests -c Release
+      - name: Test companion
+        run: dotnet test companion/Library.Companion.Tests -c Release
+      - name: Package locally
+        env:
+          PREVIEW_VERSION: ${{ inputs.version }}
+        run: python3 scripts/package-release.py --version "$PREVIEW_VERSION" --output ".local/release/library-$PREVIEW_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-library-preview
+          path: |
+            .local/release/*.zip
+            .local/release/*.sha256
+          retention-days: 7
+      # Deliberately no registry push, release creation, signing, deployment or credentials.
