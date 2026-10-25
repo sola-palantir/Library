@@ -2,7 +2,7 @@
 
 A local media catalog and preservation workspace for movies and television. React + TypeScript, ASP.NET Core, SQLite. The Windows architecture separates the Docker web/API/catalog from a native companion that owns local media I/O.
 
-**Early implementation with synthetic qualification; not a production release.** The navigation areas connect to working APIs. Default Windows Compose runs the catalog, UI and imported media/preset review with media jobs paused. Native processing has passed local synthetic tests but is not connected to production jobs. Hardware burning, live torrent clients and Plex/Jellyfin servers have not been qualified.
+**Early implementation with bounded local qualification; not a production release.** The navigation areas connect to working APIs. Default Windows Compose runs the catalog, UI and imported media/preset review with media jobs paused. Native processing has passed synthetic and explicitly reviewed short-sample tests but is not connected to production jobs. Hardware burning, live torrent clients and Plex/Jellyfin servers have not been qualified.
 
 ![Library with synthetic titles and inspector](docs/screenshots/library.png)
 
@@ -127,7 +127,7 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 
 The browser test performs real operations on the synthetic fixture roots. Use a dedicated fixture workspace. See [validation evidence](docs/validation.md), [architecture and safety boundaries](docs/architecture.md), [native Windows adapter qualification](docs/native-adapter.md) and [interoperability references](docs/references.md).
 
-Latest local verification: **156 backend, 82 companion and 17 client-policy tests**,
+Latest local verification: **157 backend, 82 companion and 17 client-policy tests**,
 the client build, and the bounded Windows header/render/probe checks described
 below. Earlier native qualification passed **15 lifecycle** and **eight
 resource/lifetime scenario groups**, Windows x64 publish and service image build.
@@ -161,6 +161,14 @@ of movie compression or a perceptual-quality verdict.
   better grain/fine texture in the inspected native crops. Motion was not viewed;
   this does not establish quality parity or device playback. The exported presets
   and production RF22 profile are unchanged. See [RF20 comparison](docs/color-and-pgs-qualification.md#rf20-versus-rf22-comparison---2026-10-25).
+- A subsequent **offline RF20 workflow** retained one eight-second test file
+  (9,826,780 bytes), verified copied Japanese audio/both English PGS tracks,
+  native publication cancellation/restart, frame-exact seek results, isolated
+  catalog lineage, a test archive manifest, catalog backup/reopen and full file
+  read-back. This is a manually exercised qualification path; production sample
+  archive eligibility remains refused. Actual motion, heard audio, Plex/device
+  playback and independent media/optical restoration remain unrun. See
+  [retained output, results and playback handoff](docs/end-to-end-qualification.md).
 - **Silo processing remains blocked.** A read-only interval contains both Dolby
   Vision profile 8 and HDR10+ frame metadata. Preserving both needs a qualified
   path; an SDR preset or Dolby Vision option alone is insufficient. See

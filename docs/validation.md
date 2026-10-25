@@ -1,5 +1,24 @@
 # Validation evidence
 
+## Offline RF20 workflow - 2026-10-25
+
+[The retained-output workflow](end-to-end-qualification.md) passed technical
+preservation checks, native cancellation and process-interruption recovery,
+read-only seek/frame-hash and subtitle-render checks, isolated catalog/manifest
+registration, a restored-catalog reopen and manifest-bound full file read-back.
+It retains exactly one eight-second media output. The preceding 12-second attempt
+hit the unchanged two-minute limit and published nothing; the bounded retry
+completed in 90.54 seconds without increasing resource limits.
+
+The API-domain runner writes only its new qualification catalog on durable Linux
+storage; Windows retains media ownership. Production sample archive selection is
+still refused. There is no enabled receipt route, pairing or media transfer.
+Local regressions cover **157 backend, 82 companion and 17 client-policy tests**
+and the client build; exact pushed-commit browser/Windows CI is reported in the
+handoff. The real output remains available for user playback. Motion, heard audio,
+Plex/device behavior, independent media restoration and optical recovery are not
+claimed. The unchanged heavy synthetic adapter suite was not repeated.
+
 ## RF20 comparison - 2026-10-25
 
 [The RF20/RF22 comparison](color-and-pgs-qualification.md#rf20-versus-rf22-comparison---2026-10-25)
