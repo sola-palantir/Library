@@ -127,9 +127,10 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 
 The browser test performs real operations on the synthetic fixture roots. Use a dedicated fixture workspace. See [validation evidence](docs/validation.md), [architecture and safety boundaries](docs/architecture.md), [native Windows adapter qualification](docs/native-adapter.md) and [interoperability references](docs/references.md).
 
-Latest local verification: **157 backend, 82 companion and 17 client-policy tests**,
-the client build, and the bounded Windows header/render/probe checks described
-below. Earlier native qualification passed **15 lifecycle** and **eight
+Latest local verification: **164 backend and 86 companion tests**; the prior
+unchanged client passed **17 client-policy tests** and its build. Native checks
+include ten same-device synthetic archive-restore scenario groups and the Windows
+header/render/probe checks described below. Earlier native qualification passed **15 lifecycle** and **eight
 resource/lifetime scenario groups**, Windows x64 publish and service image build.
 The unchanged heavy native suite was not repeated for the latest evidence/helper
 change. CI runs browser workflows and Windows compilation on each pushed commit;
@@ -169,6 +170,12 @@ of movie compression or a perceptual-quality verdict.
   archive eligibility remains refused. Actual motion, heard audio, Plex/device
   playback and independent media/optical restoration remain unrun. See
   [retained output, results and playback handoff](docs/end-to-end-qualification.md).
+- The unattended follow-up qualified **synthetic archive-to-file restoration**
+  with the original absent, corrupt-input refusal and interrupted recovery, plus
+  the shipped catalog restore/startup-review gate on a separate durable test
+  volume. It also fixed early rejection of manifest file/directory collisions.
+  These are same-host tests; independent hardware/optical and real-media restore
+  remain unqualified. The retained RF20 output was not copied or re-encoded.
 - **Silo processing remains blocked.** A read-only interval contains both Dolby
   Vision profile 8 and HDR10+ frame metadata. Preserving both needs a qualified
   path; an SDR preset or Dolby Vision option alone is insufficient. See

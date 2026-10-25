@@ -1,5 +1,28 @@
 # Validation evidence
 
+## Archive restoration and manifest integrity - 2026-10-25
+
+[The unattended recovery follow-up](end-to-end-qualification.md#unattended-recovery-follow-up)
+passed ten native Windows synthetic scenario groups: archive-only restoration to
+a distinct file, cancellation/interruption/retry safety, corruption/missing-file/
+wrong-identity/collision refusal, and changed-evidence recovery refusal. Inputs
+were invented, artifacts retained, and no supplied media was copied or encoded.
+This is same-device simulation, not independent hardware or optical recovery.
+
+The shipped restore script restored the prior qualification catalog's 15 tables
+to a new durable volume. Fresh-process comparison matched all rows/schema,
+integrity, foreign keys and report hash. Existing targets and corrupt databases
+were refused. The startup gate rejected absent/wrong review; the correct-digest
+function test stored no acknowledgement and started no service.
+
+Three new companion tests first reproduced accepted file/directory collisions in
+manifests. Shared hierarchy validation now rejects them in both planner and
+companion; sibling-file tests pass. Full local regressions passed **164 backend
+and 86 companion tests**, plus the qualification-runner build. Client code is
+unchanged; final CI covers its policy/build/browser checks and Windows compilation.
+The retained RF20 sample and presets still match their prior hashes. Human
+motion/heard-audio/device tests and real-media/optical restoration remain unrun.
+
 ## Offline RF20 workflow - 2026-10-25
 
 [The retained-output workflow](end-to-end-qualification.md) passed technical

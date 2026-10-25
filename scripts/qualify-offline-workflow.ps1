@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$CompanionTestAssembly)
+param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$CompanionTestAssembly,[ValidateSet('Publication','ArchiveRestore')][string]$Mode='Publication')
 $ErrorActionPreference='Stop'
 if(-not $IsWindows){throw 'Native Windows qualification required.'}
 if(-not [IO.Directory]::Exists($TestRoot)){throw 'Supply an existing isolated test directory.'}
@@ -6,4 +6,5 @@ $companionFolder=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($CompanionTe
 [Reflection.Assembly]::LoadFrom((Join-Path $companionFolder 'Library.Execution.dll'))|Out-Null
 [Reflection.Assembly]::LoadFrom((Join-Path $companionFolder 'Library.Companion.dll'))|Out-Null
 [Reflection.Assembly]::LoadFrom([IO.Path]::GetFullPath($CompanionTestAssembly))|Out-Null
-[Library.Companion.Tests.QualificationPublication]::NativeFixture([IO.Path]::GetFullPath($TestRoot))
+if($Mode -eq 'ArchiveRestore'){[Library.Companion.Tests.ArchiveRestoreQualification]::Run([IO.Path]::GetFullPath($TestRoot))}
+else{[Library.Companion.Tests.QualificationPublication]::NativeFixture([IO.Path]::GetFullPath($TestRoot))}

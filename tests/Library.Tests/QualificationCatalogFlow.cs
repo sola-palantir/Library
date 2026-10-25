@@ -13,6 +13,53 @@ public static class QualificationCatalogFlow
     public record Evidence(string Name, string SourceName, FileObservation Output, string Sha256, FileObservation Source,
         string SourceSha256, string PlanJson, string ValidationJson);
 
+    static string[] CatalogSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        connection.Open(); using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA integrity_check"; if ((string?)command.ExecuteScalar() != "ok") throw new IOException("Catalog integrity failed.");
+        command.CommandText = "PRAGMA foreign_key_check"; using (var foreignKeys = command.ExecuteReader()) if (foreignKeys.Read()) throw new IOException("Catalog foreign keys failed.");
+        command.CommandText = "PRAGMA user_version";
+        var rows = new List<string> { "schema-version:" + command.ExecuteScalar() }; var tables = new List<string>();
+        command.CommandText = "SELECT type,name,sql FROM sqlite_schema ORDER BY type,name";
+        using (var schema = command.ExecuteReader()) while (schema.Read())
+        {
+            rows.Add(JsonSerializer.Serialize(new object[] { schema.GetString(0), schema.GetString(1), schema.IsDBNull(2) ? "" : schema.GetString(2) }));
+            if (schema.GetString(0) == "table") tables.Add(schema.GetString(1));
+        }
+        foreach (var table in tables)
+        {
+            command.CommandText = "SELECT * FROM \"" + table.Replace("\"", "\"\"") + "\"";
+            using var reader = command.ExecuteReader(); var contents = new List<string>();
+            while (reader.Read()) { var values = new object[reader.FieldCount]; reader.GetValues(values); contents.Add(JsonSerializer.Serialize(values)); }
+            rows.Add(table); rows.AddRange(contents.Order(StringComparer.Ordinal));
+        }
+        return rows.ToArray();
+    }
+
+    public static string VerifyOfficialRestore(string sourceRoot, string restoredRoot)
+    {
+        var report = File.ReadAllText(Path.Combine(restoredRoot, "restore-report.json"));
+        using var parsed = JsonDocument.Parse(report);
+        if (parsed.RootElement.GetProperty("status").GetString() != "restored-offline") throw new IOException("Restore did not finish.");
+        var catalogPath = Path.Combine(restoredRoot, "catalog.db");
+        using (var file = File.OpenRead(catalogPath))
+            if (Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)) != parsed.RootElement.GetProperty("sha256").GetString())
+                throw new IOException("Restored catalog differs from its report.");
+        if (!CatalogSnapshot(Path.Combine(sourceRoot, "catalog-backup.db")).SequenceEqual(CatalogSnapshot(catalogPath)))
+            throw new IOException("Restored catalog contents/schema differ from exported backup.");
+        foreach (var acknowledgement in new string?[] { null, new string('0', 64) })
+        {
+            var refused = false;
+            try { RestoreReview.Validate(restoredRoot, acknowledgement); } catch (InvalidOperationException) { refused = true; }
+            if (!refused) throw new IOException("Startup gate accepted missing or incorrect review.");
+        }
+        // Pure gate check only: no environment configuration, service or jobs start.
+        RestoreReview.Validate(restoredRoot, BackupDomain.Digest(report));
+        return JsonSerializer.Serialize(new { allTablesAndSchemaMatched = true, reportHashMatched = true, startupWithoutReviewRefused = true,
+            wrongReviewRefused = true, correctDigestFunctionCheck = true, acknowledgementStored = false, serviceStarted = false, mediaRestored = false });
+    }
+
     public static string Verify(string root)
     {
         string? lineage = null, manifest = null;
@@ -100,6 +147,27 @@ public static class QualificationCatalogFlow
 
 public class QualificationCatalogFlowTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RestoreVerifierChecksTrustedBackupAndReport(bool changeCatalog)
+    {
+        var root = Directory.CreateTempSubdirectory("library-restore-qualification-").FullName;
+        var e = new QualificationCatalogFlow.Evidence("invented.bin", "source.bin", new(100, 20, "out"), new string('a', 64), new(1000, 10, "in"), new string('b', 64), "{}", "{}");
+        await QualificationCatalogFlow.Run(root, JsonSerializer.Serialize(e));
+        var restored = Directory.CreateDirectory(Path.Combine(root, "script-restored")).FullName;
+        var path = Path.Combine(restored, "catalog.db"); File.Copy(Path.Combine(root, "catalog-backup.db"), path);
+        void Report(string? hash = null) => File.WriteAllText(Path.Combine(restored, "restore-report.json"), JsonSerializer.Serialize(new { status = "restored-offline", sha256 = hash ?? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))) }));
+        Report(); Assert.Contains("\"startupWithoutReviewRefused\":true", QualificationCatalogFlow.VerifyOfficialRestore(root, restored));
+        if (changeCatalog)
+        {
+            using (var c = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+            { c.Open(); using var command = c.CreateCommand(); command.CommandText = "UPDATE Titles SET Name='changed after restore'"; command.ExecuteNonQuery(); }
+            Report();
+        }
+        else Report(new string('0', 64));
+        Assert.Throws<IOException>(() => QualificationCatalogFlow.VerifyOfficialRestore(root, restored));
+    }
     [Fact] public async Task IsolatedCatalogRetainsSampleBoundaryAndRestoresHistory()
     {
         var root = Directory.CreateTempSubdirectory("library-qualification-").FullName;

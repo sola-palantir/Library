@@ -42,6 +42,8 @@ public static class Contract
         if (m.Label.Length > 32) throw new InvalidDataException("Volume label exceeds 32 characters.");
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in m.Files) { Scope.Relative(f.Path); Digest(f.Sha256); if (f.Bytes < 0 || !paths.Add(f.Path) || f.Path.Equals(ManifestName, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Duplicate, reserved or invalid file."); }
+        if (Library.Execution.ArchivePaths.HasFileDirectoryCollision(paths.Append(ManifestName)))
+            throw new InvalidDataException("Manifest files conflict with a required directory.");
     }
     public static void Fit(Media media, long imageBytes, long reserveBytes)
     {

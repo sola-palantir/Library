@@ -121,3 +121,57 @@ Apple TV audio results also depend on its output chain.
 A catalog backup/reopen and full manifest-bound read-back of this one retained
 file do not prove an independent media restore or optical recovery. No second
 movie copy, disc image or physical burn is created. Those remain separate tests.
+
+## Unattended recovery follow-up
+
+The retained RF20 file and saved presets were hash-checked unchanged. No repeat
+encode, second supplied-media output, Silo operation or playback claim was added.
+
+**Native archive restoration used invented payloads.** Ten scenario groups ran
+on Windows NTFS, using separate archive/state/restore directories on the same
+device. The original was absent; a 1 MiB archived fixture restored to a distinct
+file identity with exact bytes and SHA-256. Cancellation retained its validated
+partial, an injected exception after publication reconciled without another copy,
+and a repeat recovery was idempotent. The following failed closed:
+
+- Changed manifest, same-size/same-timestamp payload corruption, missing payload,
+  wrong archive identity, destination collision and pre-cancellation: no partial
+  output created; an existing occupant remained unchanged.
+- Changed archive, partial or manifest after staging: recovery refused and the
+  owned partial remained for review.
+
+No fixture was deleted. This is a test-only use of the existing native publication
+primitives, not a newly enabled restore endpoint. A separate file on the same
+device is not independent hardware, removable-media or optical qualification.
+Real Godzilla restoration remains unrun to preserve its one-output limit.
+
+```powershell
+./scripts/qualify-offline-workflow.ps1 `
+  -TestRoot EXISTING_ISOLATED_TEST_DIRECTORY `
+  -CompanionTestAssembly ./companion/Library.Companion.Tests/bin/Release/net10.0/Library.Companion.Tests.dll `
+  -Mode ArchiveRestore
+```
+
+**The shipped catalog restore tool was also exercised.** It read the prior
+qualification's standalone backup through a read-only mount and restored schema
+6/all 15 tables to a new durable Docker volume. A fresh read-only verifier compared
+every table row, schema version and schema object (including immutable triggers)
+against the exported backup, checked SQLite integrity/foreign keys and matched
+the report's file hash. The backup remained unchanged with no source WAL/SHM.
+An existing destination and an invented corrupt database were refused. The real
+startup-review function rejected absent/wrong acknowledgement; its correct-digest
+branch was checked only in-process. No acknowledgement was stored and no service
+or job started. Both volumes reside on the same host, not independent hardware.
+
+```sh
+dotnet tests/Library.Qualification/bin/Release/net10.0/Library.Qualification.dll --verify-restored SOURCE_QUALIFICATION_DIRECTORY RESTORED_DIRECTORY
+```
+
+The tests exposed one manifest bug: file/directory hierarchy collisions were not
+rejected early. For example, `movie.mkv` and `movie.mkv/child`, including case-only
+variants, cannot both exist in an archive. Using `LIBRARY-MANIFEST.json` as a
+directory also conflicts with the required root manifest. Shared validation now
+rejects these in API preview and companion validation, before staging. Valid
+sibling paths remain accepted. Existing destination no-overwrite protections were
+not relaxed. Local regressions passed **164 backend and 86 companion tests**;
+CI also covers client/browser tests and Windows compilation.

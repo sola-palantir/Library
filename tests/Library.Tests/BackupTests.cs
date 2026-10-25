@@ -6,6 +6,21 @@ using Xunit;
 
 public class BackupTests
 {
+    [Theory]
+    [InlineData("movie.mkv", "movie.mkv/child")]
+    [InlineData("Folder/file.mkv", "folder")]
+    [InlineData("LIBRARY-MANIFEST.json/child", "movie.mkv")]
+    [InlineData("MANIFEST.JSON/child", "movie.mkv")]
+    public void FileDirectoryConflictsFailBeforeArchiveApproval(string first, string second)
+    {
+        var files = new[] { new BackupFile(1, first, 1, new string('a', 64), "a"), new BackupFile(2, second, 1, new string('b', 64), "b") };
+        Assert.Throws<ArgumentException>(() => BackupDomain.Preview(new("Synthetic", [new("bundle", "Synthetic", files)], 100, 0)));
+    }
+    [Fact] public void SiblingFilesRemainValidForArchivePlanning()
+    {
+        var files = new[] { new BackupFile(1, "folder/a.bin", 1, new string('a', 64), "a"), new BackupFile(2, "folder/b.bin", 1, new string('b', 64), "b") };
+        Assert.Single(BackupDomain.Preview(new("Synthetic", [new("bundle", "Synthetic", files)], 100, 0)).Packing.Discs);
+    }
     static BackupBundle Bundle(int id, long bytes, int? episode = null, long sidecar = 0) => new($"b{id}", $"Synthetic {id}", sidecar == 0 ? [new(id, $"file{id}.mkv", bytes, new string('a',64), $"identity{id}")] : [new(id, $"file{id}.mkv", bytes, new string('a',64), $"identity{id}"), new(id+1000, $"file{id}.nfo", sidecar, new string('b',64), $"sidecar{id}",true)], episode);
     [Fact] public void FillOneUsesExactSizesAndKeepsSidecars()
     {

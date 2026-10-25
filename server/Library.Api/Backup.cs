@@ -97,6 +97,8 @@ public static class BackupDomain
             }
             if (Size(bundle) > request.CapacityBytes - request.ReserveBytes) throw new ArgumentException($"Bundle {bundle.Id} exceeds payload capacity; no files were split.");
         }
+        if (Library.Execution.ArchivePaths.HasFileDirectoryCollision(paths.Append("manifest.json").Append("LIBRARY-MANIFEST.json")))
+            throw new ArgumentException("Archive files conflict with a required directory.");
         BackupCoverage? coverage = null;
         if (request.Season is { } season)
         {
