@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$TestAssembly,[Parameter(Mandatory=$true)][string]$ToolsRoot,[ValidateSet('Resources','BufferedInput','Color','Window','Media','Media1080','OwnerExit','All')][string]$Mode='All')
+param([Parameter(Mandatory=$true)][string]$TestRoot,[Parameter(Mandatory=$true)][string]$TestAssembly,[Parameter(Mandatory=$true)][string]$ToolsRoot,[ValidateSet('Resources','BufferedInput','Comparison','Color','Window','Media','Media1080','OwnerExit','All')][string]$Mode='All')
 $ErrorActionPreference='Stop'
 if(-not $IsWindows){throw 'Native Windows qualification required.'}
 $root=[IO.Path]::GetFullPath($TestRoot)
@@ -10,6 +10,7 @@ $folder=[IO.Path]::GetDirectoryName($assembly)
 [Reflection.Assembly]::LoadFrom($assembly)|Out-Null
 if($Mode -eq 'OwnerExit'){[Library.Companion.Tests.NativeAdapterQualification]::ExitOwner($root,(Get-Process -Id $PID).Path);throw 'Expected independent-process exit.'}
 if($Mode -in @('BufferedInput','All')){[Library.Companion.Tests.NativeAdapterQualification]::BufferedInput((Get-Process -Id $PID).Path)}
+if($Mode -in @('Comparison','All')){[Library.Companion.Tests.NativeComparisonQualification]::Preflight([IO.Path]::GetFullPath($ToolsRoot))}
 if($Mode -in @('Color','All')){[Library.Companion.Tests.NativeColorQualification]::Run([IO.Path]::GetFullPath($ToolsRoot))}
 if($Mode -in @('Window','All')){[Library.Companion.Tests.NativeWindowQualification]::Run($root,[IO.Path]::GetFullPath($ToolsRoot))}
 if($Mode -in @('Resources','All')){

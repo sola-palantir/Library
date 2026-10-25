@@ -91,8 +91,15 @@ production jobs or add nonzero sample offsets to the product contract. See
 [color and PGS evidence](color-and-pgs-qualification.md). A subsequent source-only
 PGS frame render passed; whole-film timing/playback, sparse-PGS resource bounds,
 full-title finalization and production real-film execution remain unqualified.
-A separately approved source/window-bound default-range test now has reconciled
-technical encode evidence; it produced no worker receipt or retained output.
+A separately approved source/window-bound default-range test now has a complete
+local acceptance record: one fresh output stayed in RAM through technical checks,
+whole-container hashing and actual matched-frame/subtitle visual review. It was
+disposed only after the terminal decision, with no worker/catalog receipt or
+published movie. Fine texture and grain are visibly reduced; motion, whole-title
+quality and device playback remain unassessed. The qualification-only
+`SampleReviewSession` rejects incomplete, stale or changed evidence and retains
+the output until the decision. Run `-Mode Comparison` for its synthetic native
+render/lifetime preflight; this mode does not read real media or issue a receipt.
 The production unknown-range gate remains unchanged.
 [Silo feasibility](hdr-preservation-feasibility.md) now records both DV and HDR10+
 in decoded frames; its processing remains blocked.

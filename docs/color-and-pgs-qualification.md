@@ -114,7 +114,7 @@ Output explicitly signals limited range; no range-conversion, crop or scaling
 filter is used. The fixed CRF 22/Slow/8-bit sample profile, stream selection,
 resource limits and shared frame/packet/inventory/decode gates still apply.
 
-### Approved short encode: results and limits
+### Earlier approved short encodes: retrospective evidence
 
 The requested window began at **164.664 seconds** for 12 seconds. Two sequential
 RAM-only encodes completed with the original 1080p preset's fixed starting point:
@@ -126,7 +126,7 @@ complete pipe. The harness now counts packets through EOF. The repeat completed
 and full video/audio decoding passed, but inventory correctly refused a second
 asymmetry: the early source probe had no PGS canvas dimensions, whereas the
 output probe discovered them. The output buffer was disposed after that refusal.
-No third encode was run to resolve this.
+No third encode was run during that earlier investigation.
 
 Source-only inspection subsequently read the actual PGS presentation segments,
 verified their SHA-256/size/timestamp against the retained source packet evidence,
@@ -166,6 +166,69 @@ video reduction is specific to these 288 frames and says nothing by itself about
 perceptual quality or whole-film savings. Production processing, pairing and Silo
 processing remain disabled. Inputs, presets and earlier failed residuals remain
 unchanged. No new media files or reservations were created.
+
+### Retained sample: technical acceptance and visual review - 2026-10-25
+
+A subsequent qualification fixed the output lifetime before another encode.
+`SampleReviewSession`, in the test assembly only, owns a single bounded output
+through sealing, technical validation, visual review and a terminal decision.
+It binds each stage to the whole-container hash, requires a visual-evidence hash
+and notes, rehashes the output at completion, and rejects missing, stale or changed
+evidence. Premature disposal cannot later become an acceptance. Synthetic tests
+cover these transitions, including explicit visual rejection. The Windows
+`-Mode Comparison` preflight generated an invented RAM fixture, drained rendering
+through EOF and tested the rejection lifecycle before the real encode.
+
+The real preflight rechecked source identity, configuration and every inspected
+SPS/PPS/slice reference. The scan matched the evidence above. Source PGS canvas
+proof and source subtitle rendering completed **before** encoding. One fresh
+12-second sample then used the same reviewed source, window and CRF 22/Slow/8-bit
+profile. No production range rule or validator was loosened.
+
+While that one output remained available, inventory, all 288 frames, complete
+copied-packet hashes/sizes/timing and exact counts, measured duration and full
+video/audio decode passed. The result again contained **1,203 Japanese DTS-HD MA,
+four English regular PGS and six English SDH packets**. Resolution was 1920x1080,
+pixel format YUV420P and common timestamp shift -163.840 seconds. The complete
+11,237,343-byte output had SHA-256:
+
+`c921be9548f3f87065cf53e7db28c8534738c84ff3b1c192a6745ffa2cb88c24`
+
+Measured A/V packet duration was **12.836 seconds**, including copied-audio
+pre-roll. Video packet payload again changed from **42,369,694 to 5,510,443 bytes
+(86.99% smaller)**. This fresh encode took **79.80 seconds**, with **589,148,160
+bytes (561.86 MiB)** peak committed memory, within the existing 1 GiB limit.
+It did not crop, scale, convert color range, encode audio or convert subtitles.
+
+The retained output supplied three matched video frame pairs (indices 12, 120
+and 240), both whole-frame overviews and native-resolution 640x480 crops. Actual
+pixel inspection found visible softening and reduced grain/fine texture,
+particularly foliage and clothing. There was no obvious framing, gross
+brightness or color shift in these comparisons. English regular and SDH PGS
+renders at the same cue near source time 168.5 seconds matched their respective
+source text, placement and appearance; the two tracks remain distinct.
+
+Both sides used the same limited-range display interpretation. Missing source
+matrix/primaries remain unspecified; this comparison does not establish absolute
+color accuracy. The three local diagnostic PNGs are bound to the output by a
+manifest with SHA-256 of the serialized UTF-8 JSON before its file newline:
+
+`a3658b577a3f28aec87fea76afe5c3b2a7800be54cc37583c20c240c089bc20d`
+
+After checking those image hashes and rehashing the entire retained movie
+buffer, the harness recorded **`accepted-local-sample`**, then disposed the
+buffer. This closes the previous lifetime/hash/visual-evidence gap. Acceptance
+means the bounded local technical experiment completed with a limited static
+visual review; it does not approve the compression tradeoff on the user's behalf
+or claim perceptual parity, motion quality, whole-film savings, full-title
+subtitle synchronization or Plex-device playback. No worker/catalog receipt was
+issued (`workerReceipt=false`), and no movie was published or archived.
+
+The three comparison images and detailed evidence remain private under ignored
+`.local/native-godzilla-diagnosis/`. No encoded movie file or reservation was
+created. Source identity/size/mtime stayed unchanged while pinned; full source
+contents were not rehashed. Presets and old residuals remain preserved. Production
+processing, persistent pairing, real-media handoff and Silo processing remain off.
 
 ## Real PGS event window
 

@@ -1,8 +1,40 @@
 # Validation evidence
 
+## Retained sample acceptance - 2026-10-25
+
+[The complete sample record](color-and-pgs-qualification.md#retained-sample-technical-acceptance-and-visual-review---2026-10-25)
+supersedes the earlier output-lifetime gap below. The qualification session now
+retains one output until technical checks and an output-bound visual decision
+finish; missing checks, changed output, stale hashes and premature disposal fail.
+The native synthetic comparison preflight passed before one fresh real encode.
+
+That encode revalidated the approved source/window SPS evidence and passed full
+inventory/frame/packet/duration and video/audio decode checks while still retained:
+**288 frames, 1,203 Japanese audio packets, four regular and six SDH English PGS
+packets**, with all copied payloads and relative timing preserved. The complete
+**11,237,343-byte** output SHA-256 was
+`c921be9548f3f87065cf53e7db28c8534738c84ff3b1c192a6745ffa2cb88c24`.
+It took **79.80 seconds** and peaked at **589,148,160 bytes** committed memory.
+
+Actual inspection of three matched video frames/native crops and the two
+subtitle renders found reduced grain/fine texture, no obvious gross framing or
+brightness shift, and matching source/output subtitle appearance at the inspected
+cue. Image hashes and the complete movie hash were rechecked before recording
+`accepted-local-sample` and disposing the buffer. No worker/catalog receipt,
+published movie or reservation was created. Local diagnostic images/evidence
+remain ignored. This is limited static visual review, not motion, whole-film,
+absolute-color, perceptual-parity or device qualification.
+
+Local regressions passed **156 backend, 78 companion and 17 client-policy tests**
+and the client build. Five new lifecycle tests cover retained acceptance and
+failure paths. The actual Windows comparison preflight exercised EOF-draining
+rendering and a terminal synthetic rejection. The unchanged heavy resource and
+storage suites were not rerun. CI browser/Windows results are reported for the
+new commit. Production processing, persistent pairing and Silo remain disabled.
+
 ## Approved Godzilla range/sample qualification - 2026-10-25
 
-[Detailed results](color-and-pgs-qualification.md#approved-short-encode-results-and-limits)
+[Detailed results](color-and-pgs-qualification.md#earlier-approved-short-encodes-retrospective-evidence)
 record the user's narrow range approval, complete inspected NAL coverage and
 the distinction between reconciled technical evidence and a published asset.
 All **23 observed SPS occurrences** matched the approved hash; **1,716 slices
