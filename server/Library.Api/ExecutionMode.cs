@@ -8,6 +8,8 @@ public static class ExecutionMode
     public static void Validate(LibraryOptions options)
     {
         options.ReviewSession?.Validate();
+        options.ReadOnlyConnection?.Validate();
+        if (options.ReadOnlyConnection != null && (options.ExecutionBackend != Windows || options.ReviewSession != null)) throw new ArgumentException("Remembered read-only access requires Windows mode and cannot share a temporary session.");
         if (options.ReviewSession != null && options.ExecutionBackend != Windows) throw new ArgumentException("Read-only review sessions require the Windows worker.");
         if (options.ExecutionBackend is not (Linux or Windows)) throw new ArgumentException("Unknown execution backend; choose linux-local or windows-worker explicitly.");
         if (!IsLocal(options) && (options.EnableSampleRemux || options.EnableSampleEncode || options.EnableSampleHandoff || options.SampleHandoffGrant != null))

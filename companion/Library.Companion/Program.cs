@@ -9,6 +9,17 @@ public static class Program
         try
         {
             if (args.SequenceEqual(new[] { "--version" })) { Console.WriteLine(JsonSerializer.Serialize(Library.Execution.ReleaseInfo.Describe())); return 0; }
+            if (args.Length == 3 && args[0] == "review-authorize")
+            {
+                if (new FileInfo(args[1]).Length > 8192) throw new ArgumentException("Oversized authorization request.");
+                var request = JsonSerializer.Deserialize<ReviewAccessRequest>(File.ReadAllText(args[1]), Library.Execution.ExecutionContract.Json) ?? throw new ArgumentException("Missing request.");
+                ReviewAccess.Authorize(request, args[2]); return 0;
+            }
+            if (args.Length == 2 && args[0] == "review-connect")
+            {
+                using var cancelled = new CancellationTokenSource(); Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancelled.Cancel(); };
+                ReviewAccess.Run(args[1], cancelled.Token).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Length == 2 && args[0] == "review-session")
             {
                 if (new FileInfo(args[1]).Length > 8192) throw new ArgumentException("Oversized review session configuration.");

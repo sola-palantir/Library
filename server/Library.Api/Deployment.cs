@@ -43,7 +43,7 @@ public static class Deployment
         finally { await db.Database.CloseConnectionAsync(); }
         return new { ready = true, version = ReleaseInfo.Version, protocol = ReleaseInfo.Protocol, deploymentProtocol = ReleaseInfo.DeploymentProtocol,
             catalogSchema = CatalogSchema.Version, mode = ReleaseInfo.Mode, paused = Paused(options), activeJobs = await Active(db),
-            production = false, pairing = false, backend = options.ExecutionBackend };
+            production = false, pairing = false, readOnlyAccessConfigured = options.ReadOnlyConnection != null, backend = options.ExecutionBackend };
     }
     public static void MapDeployment(this WebApplication app)
     {

@@ -26,14 +26,17 @@ public record ReviewSessionOptions(string SessionId, string Folder, string ApiOr
     }
 }
 
-public sealed class ReadOnlyReview(LibraryOptions options, IDbContextFactory<Catalog> factory) : BackgroundService
+public sealed class ReadOnlyReview(LibraryOptions options, IDbContextFactory<Catalog> factory, ReadOnlyConnection? connection = null) : BackgroundService
 {
     public const string JobType = "read-only-sample-scan";
     readonly SemaphoreSlim gate = new(1, 1);
     DateTimeOffset lastWorker;
-    ReviewSessionOptions Grant => options.ReviewSession ?? throw new InvalidOperationException("Start an explicitly scoped read-only worker session before adding a sample folder. No permanent pairing is enabled.");
-    public bool Connected => options.ReviewSession?.Active(DateTimeOffset.UtcNow) == true && DateTimeOffset.UtcNow - lastWorker < TimeSpan.FromSeconds(5);
-    public object Capabilities() => new { enabled = options.ReviewSession?.Active(DateTimeOffset.UtcNow) == true, connected = Connected, folder = options.ReviewSession?.Folder, expiresUtc = options.ReviewSession?.ExpiresUtc, maxFiles = ReviewScan.MaxFiles, recursive = false, encoding = false, mediaTransfer = false, persistentPairing = false };
+    string? lastSession;
+    readonly ReadOnlyConnection connections = connection ?? new(options, factory);
+    public ReviewSessionOptions? CurrentGrant => options.ReviewSession ?? connections.Grant;
+    ReviewSessionOptions Grant => CurrentGrant ?? throw new InvalidOperationException("Connect an explicitly approved read-only worker before adding a sample folder. Connect cannot authorize new access.");
+    public bool Connected => CurrentGrant is { } grant && grant.Active(DateTimeOffset.UtcNow) && lastSession == grant.SessionId && DateTimeOffset.UtcNow - lastWorker < TimeSpan.FromSeconds(5);
+    public object Capabilities() => new { enabled = CurrentGrant?.Active(DateTimeOffset.UtcNow) == true, connected = Connected, folder = CurrentGrant?.Folder ?? connections.Profile?.Folder, expiresUtc = CurrentGrant?.ExpiresUtc, maxFiles = ReviewScan.MaxFiles, recursive = false, encoding = false, mediaTransfer = false, persistentPairing = false, connection = connections.Status(Connected) };
     async Task<T> Locked<T>(Func<Catalog, Task<T>> action, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
@@ -50,8 +53,9 @@ public sealed class ReadOnlyReview(LibraryOptions options, IDbContextFactory<Cat
         job.Payload = ExecutionContract.Serialize(new ReviewScanCommand(job.Id, Grant.SessionId, Grant.RootId, deadline));
         db.Add(job); db.Audit("read-only-scan-queued", job.Id); await db.SaveChangesAsync(ct); return job;
     }, ct);
-    public Task<ReviewScanCommand?> Poll(CancellationToken ct) => Locked(async db => {
-        lastWorker = DateTimeOffset.UtcNow; await Sweep(db, false, ct);
+    public Task<ReviewScanCommand?> Poll(CancellationToken ct, string? expectedSession = null) => Locked(async db => {
+        if (expectedSession != null && expectedSession != Grant.SessionId) throw new IOException("Worker session changed; reconnect explicitly.");
+        lastWorker = DateTimeOffset.UtcNow; lastSession = Grant.SessionId; await Sweep(db, false, ct);
         var job = await db.Jobs.Where(j => j.Type == JobType && (j.Status == "queued" || j.Status == "running")).OrderBy(j => j.CreatedUtc).FirstOrDefaultAsync(ct);
         if (job is null) return null;
         // A second worker never acquires a running command. A lost worker times out;
@@ -64,14 +68,20 @@ public sealed class ReadOnlyReview(LibraryOptions options, IDbContextFactory<Cat
         await Sweep(db, false, ct);
         return await db.Jobs.Where(j => j.Type == JobType && (id == null || j.Id == id)).OrderByDescending(j => j.CreatedUtc).Take(20).Select(j => new { j.Id, j.Status, j.Error, j.CreatedUtc, j.UpdatedUtc }).ToListAsync(ct);
     }, ct);
-    public Task<bool> KeepRunning(string id, CancellationToken ct) => Locked(async db => {
-        lastWorker = DateTimeOffset.UtcNow; await Sweep(db, false, ct);
+    public Task<bool> KeepRunning(string id, CancellationToken ct, string? expectedSession = null) => Locked(async db => {
+        if (expectedSession != null && expectedSession != Grant.SessionId) return false;
+        lastWorker = DateTimeOffset.UtcNow; lastSession = Grant.SessionId; await Sweep(db, false, ct);
         return await db.Jobs.AnyAsync(j => j.Id == id && j.Type == JobType && j.Status == "running" && !j.CancelRequested, ct);
     }, ct);
     public Task<bool> Cancel(string id, CancellationToken ct) => Locked(async db => {
         var job = await db.Jobs.SingleOrDefaultAsync(j => j.Id == id && j.Type == JobType, ct) ?? throw new ArgumentException("Unknown review scan.");
         if (job.Status is "queued" or "running") { job.Status = "cancelled"; job.CancelRequested = true; job.UpdatedUtc = DateTime.UtcNow; db.Audit("read-only-scan-cancelled", id); await db.SaveChangesAsync(ct); }
         return true;
+    }, ct);
+    public Task<bool> CancelConnection(CancellationToken ct) => Locked(async db => {
+        foreach (var job in await db.Jobs.Where(j => j.Type == JobType && (j.Status == "queued" || j.Status == "running")).ToListAsync(ct))
+        { job.Status = "cancelled"; job.CancelRequested = true; job.Error = "Windows worker disconnected; no partial inventory was registered."; job.UpdatedUtc = DateTime.UtcNow; }
+        await db.SaveChangesAsync(ct); return true;
     }, ct);
     public async Task<Operation> Retry(string id, CancellationToken ct)
     {
@@ -136,13 +146,14 @@ public sealed class ReadOnlyReview(LibraryOptions options, IDbContextFactory<Cat
         foreach (var job in await db.Jobs.Where(j => j.Type == JobType && (j.Status == "queued" || j.Status == "running")).ToListAsync(ct))
         {
             var command = JobRunner.Decode<ReviewScanCommand>(job.Payload);
-            if (restart || options.ReviewSession?.SessionId != command.SessionId || options.ReviewSession?.Active(now) != true || command.DeadlineUtc <= now || job.CancelRequested)
+            if (restart || CurrentGrant?.SessionId != command.SessionId || CurrentGrant?.Active(now) != true || command.DeadlineUtc <= now || job.CancelRequested)
             { job.Status = job.CancelRequested ? "cancelled" : "failed"; job.Error = restart ? "API restarted. Start a worker session and retry; no partial inventory was registered." : "Scan deadline or session ended. Retry with a connected worker; no partial inventory was registered."; job.UpdatedUtc = DateTime.UtcNow; }
         }
         await db.SaveChangesAsync(ct);
     }
     public override async Task StartAsync(CancellationToken ct)
     {
+        await connections.Initialize(ct);
         await Locked(async db => { await Sweep(db, true, ct); return true; }, ct);
         await base.StartAsync(ct);
     }
@@ -162,16 +173,26 @@ public static class ReadOnlyReviewEndpoints
         app.MapPost("/api/review-scan/jobs/{id}/cancel", (string id, ReadOnlyReview service, CancellationToken ct) => service.Cancel(id, ct));
         app.MapPost("/api/review-scan/jobs/{id}/retry", (string id, ReadOnlyReview service, CancellationToken ct) => service.Retry(id, ct));
         app.MapGet("/api/review-scan/copies/{id:long}", (long id, ReadOnlyReview service, CancellationToken ct) => service.Inspect(id, ct));
+        app.MapPost("/api/review-connection/connect", async (ReviewFolderRequest request, ReadOnlyConnection connection, ReadOnlyReview review, CancellationToken ct) => { await connection.Connect(request.Folder, ct); return connection.Status(review.Connected); });
+        app.MapPost("/api/review-connection/disconnect", async (ReadOnlyConnection connection, ReadOnlyReview review, CancellationToken ct) => { await connection.Disconnect(false, ct); await review.CancelConnection(ct); return connection.Status(false); });
+        app.MapPost("/api/review-connection/revoke", async (ReadOnlyConnection connection, ReadOnlyReview review, CancellationToken ct) => { await connection.Disconnect(true, ct); await review.CancelConnection(ct); return connection.Status(false); });
+        app.MapGet("/api/review-connection/worker", (HttpContext http, ReadOnlyConnection connection) => {
+            http.Response.Headers.CacheControl = "no-store";
+            if (!connection.Configured) return Results.NotFound();
+            if (!connection.Authorize($"{http.Request.Scheme}://{http.Request.Host}", http.Request.Headers.Authorization.ToString())) return Results.Unauthorized();
+            return Results.Ok(connection.Lease);
+        });
         var group = app.MapGroup("/api/review-worker");
         group.AddEndpointFilter(async (context, next) => {
             var http = context.HttpContext; var options = http.RequestServices.GetRequiredService<LibraryOptions>();
-            if (options.ExecutionBackend != ExecutionMode.Windows || options.ReviewSession == null) return Results.NotFound();
-            if (!options.ReviewSession.Authorize($"{http.Request.Scheme}://{http.Request.Host}", http.Request.Headers.Authorization.ToString(), DateTimeOffset.UtcNow)) return Results.Unauthorized();
+            var grant = http.RequestServices.GetRequiredService<ReadOnlyReview>().CurrentGrant;
+            if (options.ExecutionBackend != ExecutionMode.Windows || (options.ReviewSession == null && options.ReadOnlyConnection == null)) return Results.NotFound();
+            if (grant == null || !grant.Authorize($"{http.Request.Scheme}://{http.Request.Host}", http.Request.Headers.Authorization.ToString(), DateTimeOffset.UtcNow) || (options.ReadOnlyConnection != null && http.Request.Headers["X-Library-Review-Session"] != grant.SessionId)) return Results.Unauthorized();
             http.Response.Headers.CacheControl = "no-store";
             return await next(context);
         });
-        group.MapGet("/command", (ReadOnlyReview service, CancellationToken ct) => service.Poll(ct));
-        group.MapGet("/jobs/{id}/running", (string id, ReadOnlyReview service, CancellationToken ct) => service.KeepRunning(id, ct));
+        group.MapGet("/command", (HttpContext http, ReadOnlyReview service, CancellationToken ct) => service.Poll(ct, http.Request.Headers["X-Library-Review-Session"].FirstOrDefault()));
+        group.MapGet("/jobs/{id}/running", (string id, HttpContext http, ReadOnlyReview service, CancellationToken ct) => service.KeepRunning(id, ct, http.Request.Headers["X-Library-Review-Session"].FirstOrDefault()));
         group.MapPost("/jobs/{id}/failure", (string id, ReviewFailure request, ReadOnlyReview service, CancellationToken ct) => service.Fail(id, request.Error, ct));
         group.MapPost("/result", async (HttpContext context, ReadOnlyReview service, CancellationToken ct) => {
             using var body = new MemoryStream(); var buffer = new byte[8192]; int count;

@@ -5,14 +5,16 @@ using Library.Execution;
 
 namespace Library.Companion;
 
-public record ReviewWorkerConfiguration(string ApiOrigin, string SessionId, string Folder, string ToolsRoot, DateTimeOffset IssuedUtc, DateTimeOffset ExpiresUtc)
+internal sealed class ReviewSessionEndedException() : IOException("Read-only session ended or was disconnected.");
+
+public record ReviewWorkerConfiguration(string ApiOrigin, string SessionId, string Folder, string ToolsRoot, DateTimeOffset IssuedUtc, DateTimeOffset ExpiresUtc, bool RememberedAccess = false)
 {
     public string RootId => "review-" + DerivedMedia.Digest(Folder.TrimEnd('\\').ToUpperInvariant())[..24];
     public void Validate(DateTimeOffset now)
     {
         if (!Guid.TryParseExact(SessionId, "N", out _) || !Path.IsPathFullyQualified(Folder) || Folder.StartsWith("\\\\") || Path.GetPathRoot(Folder) == Folder || !Path.IsPathFullyQualified(ToolsRoot)) throw new ArgumentException("Explicit local review folder and verified tools required.");
         if (!Uri.TryCreate(ApiOrigin, UriKind.Absolute, out var uri) || uri.Scheme != "http" || uri.Host != "127.0.0.1" || ApiOrigin != uri.GetLeftPart(UriPartial.Authority)) throw new ArgumentException("Read-only worker connects only to the exact localhost API origin.");
-        if (ExpiresUtc <= now || now < IssuedUtc || ExpiresUtc <= IssuedUtc || ExpiresUtc - IssuedUtc > TimeSpan.FromMinutes(10)) throw new ArgumentException("Read-only session is expired or exceeds ten minutes.");
+        if (ExpiresUtc <= now || now < IssuedUtc || ExpiresUtc <= IssuedUtc || ExpiresUtc - IssuedUtc > TimeSpan.FromMinutes(RememberedAccess ? 60 : 10)) throw new ArgumentException("Read-only session is expired or exceeds its bounded lifetime.");
     }
 }
 
@@ -36,8 +38,10 @@ public sealed class ReviewWorkerClient : IDisposable
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(5)); var ct = timeout.Token;
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-Library-Review-Session", configuration.SessionId);
         if (body != null) request.Content = new StringContent(ExecutionContract.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && configuration.RememberedAccess) throw new ReviewSessionEndedException();
         if (!response.IsSuccessStatusCode) throw new IOException($"Read-only API refused the request ({(int)response.StatusCode}); no credential or response body is logged.");
         if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return default;
         using var stream = await response.Content.ReadAsStreamAsync(ct); using var result = new MemoryStream(); var buffer = new byte[4096]; int count;

@@ -72,6 +72,12 @@ It runs in a separate catalog and does not upgrade an installed bundle. Encoding
 and persistent pairing remain disabled. [Test results](docs/read-only-scan-results.md)
 distinguish actual supplied-file/browser checks from unrun playback qualification.
 
+The new [Windows worker Connect/Disconnect flow](docs/read-only-connection.md)
+supports explicit folder scope, bounded connections, cancellation, reconnect and
+revocation. It is implemented for a separately approved local authorization;
+**remembered access is not activated** in the existing preview. Connect cannot
+create credentials or renew expired access. Saved reviews remain accessible.
+
 The detailed developer setup, automated tests, Wintermute-specific tooling and
 retained RF20 playback checklist are in the [developer guide](docs/development.md).
 They are not daily installation steps. The retained Godzilla sample requires

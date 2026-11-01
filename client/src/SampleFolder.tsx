@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./types";
+import { WorkerConnection, type Connection } from "./WorkerConnection";
 
 type Session = {
   enabled: boolean;
@@ -7,6 +8,7 @@ type Session = {
   folder: string | null;
   expiresUtc: string | null;
   maxFiles: number;
+  connection?: Connection;
 };
 type Scan = { id: string; status: string; error: string | null };
 
@@ -15,7 +17,9 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
   const [folder, setFolder] = useState("");
   const [jobs, setJobs] = useState<Scan[]>([]);
   const [error, setError] = useState("");
+  const [statusError, setStatusError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
   const completed = useRef(new Set<string>());
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
@@ -45,6 +49,7 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
           );
         }
         setSession(state);
+        setStatusError("");
         setFolder((previous) => previous || state.folder || "");
         setJobs(scans);
         let changed = false;
@@ -55,7 +60,25 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
           }
         if (changed) refreshRef.current();
       } catch (e) {
-        if (!stopped) setError((e as Error).message);
+        if (!stopped) {
+          setStatusError((e as Error).message);
+          setSession((old) =>
+            old
+              ? {
+                  ...old,
+                  enabled: false,
+                  connected: false,
+                  connection: old.connection
+                    ? {
+                        ...old.connection,
+                        state: "unavailable",
+                        canConnect: false,
+                      }
+                    : undefined,
+                }
+              : null,
+          );
+        }
       } finally {
         if (!stopped) timer = setTimeout(poll, 1000);
       }
@@ -65,7 +88,7 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
       stopped = true;
       clearTimeout(timer);
     };
-  }, []);
+  }, [revision]);
   const active = jobs.find((job) => ["queued", "running"].includes(job.status));
   async function start(retryId?: string) {
     setBusy(true);
@@ -97,6 +120,13 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
   return (
     <section className="media-card">
       <h2>Add sample folder</h2>
+      {session?.connection && (
+        <WorkerConnection
+          connection={session.connection}
+          folder={folder}
+          changed={() => setRevision((v) => v + 1)}
+        />
+      )}
       <p>
         Inspect up to {session?.maxFiles ?? 8} top-level sample files. Files
         remain in place; no encoding, copying or subtitle changes occur.
@@ -107,7 +137,7 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
           <input
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
-            disabled={!!active || busy}
+            disabled={!!active || busy || !!session?.connection?.configured}
             placeholder="Approved local sample folder"
           />
         </label>
@@ -130,15 +160,23 @@ export function SampleFolder({ refresh }: { refresh: () => void }) {
         )}
       </div>
       <p role="status">
-        {!session?.enabled
-          ? "No active read-only worker session. Start a temporary session for this folder; persistent pairing and encoding remain off."
-          : !session.connected
-            ? "Waiting for the Windows read-only worker. No scan will start while disconnected."
-            : `Windows read-only worker connected until ${new Date(session.expiresUtc!).toLocaleTimeString()}. Only the approved folder is accessible.`}
+        {session?.connection?.configured
+          ? "Use the Windows worker connection controls above. Encoding and file-changing operations remain disabled."
+          : !session?.enabled
+            ? "No active read-only worker session. Start a temporary session for this folder; persistent pairing and encoding remain off."
+            : !session.connected
+              ? "Waiting for the Windows read-only worker. No scan will start while disconnected."
+              : `Windows read-only worker connected until ${new Date(session.expiresUtc!).toLocaleTimeString()}. Only the approved folder is accessible.`}
       </p>
       {error && (
         <p role="alert" className="media-error">
           {error}
+        </p>
+      )}
+      {statusError && (
+        <p role="alert" className="media-error">
+          {statusError} Connection status is unavailable; scanning is disabled
+          until status recovers.
         </p>
       )}
       {jobs.slice(0, 5).map((job) => (

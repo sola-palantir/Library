@@ -21,6 +21,7 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<Storage>();
 builder.Services.AddSingleton<MediaInspectionService>();
 builder.Services.AddSingleton<ReadOnlyReview>();
+builder.Services.AddSingleton<ReadOnlyConnection>();
 builder.Services.AddHostedService(services => services.GetRequiredService<ReadOnlyReview>());
 builder.Services.AddSingleton<SampleRemuxService>();
 builder.Services.AddDbContextFactory<Catalog>(b => b.UseSqlite($"Data Source={databasePath};Default Timeout=30"));
