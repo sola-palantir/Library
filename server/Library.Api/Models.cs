@@ -112,6 +112,7 @@ public sealed class LibraryOptions
 {
     public string ExecutionBackend { get; set; } = ExecutionMode.Linux;
     public WorkerQualificationGrant? WorkerQualification { get; set; }
+    public ReviewSessionOptions? ReviewSession { get; set; }
     // Opt-in path to an already-installed binary; never downloaded or installed by Library.
     public string? FfprobePath { get; set; }
     public string? FfmpegPath { get; set; }

@@ -66,6 +66,12 @@ restore and recovery commands, data locations and troubleshooting.
 
 ## Development and qualification
 
+The local [Windows sample-folder scan preview](docs/read-only-scan.md) now connects
+**Add sample folder → scan → review** through a temporary read-only worker session.
+It runs in a separate catalog and does not upgrade an installed bundle. Encoding
+and persistent pairing remain disabled. [Test results](docs/read-only-scan-results.md)
+distinguish actual supplied-file/browser checks from unrun playback qualification.
+
 The detailed developer setup, automated tests, Wintermute-specific tooling and
 retained RF20 playback checklist are in the [developer guide](docs/development.md).
 They are not daily installation steps. The retained Godzilla sample requires

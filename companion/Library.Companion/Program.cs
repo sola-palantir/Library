@@ -9,6 +9,17 @@ public static class Program
         try
         {
             if (args.SequenceEqual(new[] { "--version" })) { Console.WriteLine(JsonSerializer.Serialize(Library.Execution.ReleaseInfo.Describe())); return 0; }
+            if (args.Length == 2 && args[0] == "review-session")
+            {
+                if (new FileInfo(args[1]).Length > 8192) throw new ArgumentException("Oversized review session configuration.");
+                var review = JsonSerializer.Deserialize<ReviewWorkerConfiguration>(File.ReadAllText(args[1]), Library.Execution.ExecutionContract.Json) ?? throw new ArgumentException("Missing review session.");
+                var token = Environment.GetEnvironmentVariable("LIBRARY_REVIEW_TOKEN") ?? throw new ArgumentException("Ephemeral review token is missing.");
+                Environment.SetEnvironmentVariable("LIBRARY_REVIEW_TOKEN", null);
+                using var cancelled = new CancellationTokenSource();
+                Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancelled.Cancel(); };
+                using var client = new ReviewWorkerClient(review, token);
+                client.Run(cancelled.Token).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Length == 1 && args[0] == "devices") { using var device = new NativeImapi(); Console.WriteLine(JsonSerializer.Serialize(device.ListRecorders(), Contract.Json)); return 0; }
             if (args.Length < 2) throw new ArgumentException("Usage: devices | pair <config.json> | status <config.json> <disc-id> | prepare|burn|fallback|report-external|verify <config.json> <command.json>");
             var config = JsonSerializer.Deserialize<CompanionConfig>(File.ReadAllText(args[1]), Contract.Json) ?? throw new InvalidDataException("Missing config.");

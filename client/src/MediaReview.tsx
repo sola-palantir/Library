@@ -16,8 +16,15 @@ import type {
 import { syntheticProbe } from "./mediaFixture";
 import "./mediaReview.css";
 import { SampleRemuxReview } from "./SampleRemuxReview";
+import { SampleFolder } from "./SampleFolder";
 
-export function MediaReview({ rows }: { rows: Row[] }) {
+export function MediaReview({
+  rows,
+  refresh,
+}: {
+  rows: Row[];
+  refresh: () => void;
+}) {
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [origin, setOrigin] = useState("");
   const [liveCopyId, setLiveCopyId] = useState<number | null>(null);
@@ -83,14 +90,25 @@ export function MediaReview({ rows }: { rows: Row[] }) {
     setBusy(true);
     setError("");
     try {
+      const native = eligible
+        .find((r) => String(r.copy.id) === copyId)
+        ?.copy.rootId.startsWith("review-");
       const result = await api<{
         probe: unknown;
-        evidence: { toolVersion: string; observedUtc: string; copyId: number };
-      }>(`/media/inspect/${copyId}`, {});
+        evidence: {
+          toolVersion: string;
+          observedUtc: string;
+          copyId: number;
+          cached?: boolean;
+        };
+      }>(
+        native ? `/review-scan/copies/${copyId}` : `/media/inspect/${copyId}`,
+        native ? undefined : {},
+      );
       acceptProbe(
         result.probe,
-        `Read-only observation of copy ${result.evidence.copyId} at ${result.evidence.observedUtc}. ${result.evidence.toolVersion}. Not a content-integrity check.`,
-        result.evidence.copyId,
+        `${result.evidence.cached ? "Saved native scan" : "Read-only"} observation of copy ${result.evidence.copyId} at ${result.evidence.observedUtc}. ${result.evidence.toolVersion}. Not a content-integrity check. Rescan to refresh.`,
+        result.evidence.cached ? null : result.evidence.copyId,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -106,6 +124,7 @@ export function MediaReview({ rows }: { rows: Row[] }) {
   }
   return (
     <div className="media-review">
+      <SampleFolder refresh={refresh} />
       <section className="media-card">
         <h2>Inspect and review</h2>
         <p>

@@ -13,10 +13,12 @@ test("Windows control plane stays useful without media mounts or a worker", asyn
   expect(execution.localExecution).toBe(false);
   expect(execution.mediaTransfer).toBe(false);
   await page.goto("/");
-  await expect(page.getByRole("status")).toContainText("Media jobs are paused");
+  await expect(page.getByRole("status")).toContainText(
+    "Encoding and file-changing jobs are disabled",
+  );
   await expect(
-    page.getByRole("button", { name: "Scan source" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Add sample folder", exact: true }),
+  ).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath("windows-control-plane.png"),
   });

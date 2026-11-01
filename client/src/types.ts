@@ -135,6 +135,9 @@ export async function api<T>(
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(
+      path.startsWith("/media/inspect/") ? 60000 : 15000,
+    ),
   });
   if (!response.ok) {
     const result = await response

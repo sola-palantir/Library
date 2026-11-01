@@ -78,6 +78,15 @@ for (const mode of ["stream-copy", "x265-sdr-sample"]) {
             },
           ],
         };
+      else if (path === "/api/review-scan")
+        value = {
+          enabled: false,
+          connected: false,
+          folder: null,
+          expiresUtc: null,
+          maxFiles: 8,
+        };
+      else if (path === "/api/review-scan/jobs") value = [];
       else if (path === "/api/jobs") value = status === "draft" ? [] : [job()];
       else if (path === "/api/discs") value = [];
       else if (path === "/api/summary")

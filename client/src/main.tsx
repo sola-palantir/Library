@@ -534,9 +534,9 @@ function App() {
         <div className="page">
           {executionBackend === "windows-worker" && (
             <p role="status" className="notice">
-              Media jobs are paused until the Windows worker is connected. Your
-              catalog, imported media reviews and preset previews remain
-              available.
+              Encoding and file-changing jobs are disabled. Use Media review to
+              add a sample folder with the Windows read-only worker. Catalog
+              reviews and preset previews remain available after a session ends.
             </p>
           )}
           <div className="page-heading">
@@ -573,30 +573,42 @@ function App() {
                             : "Explicit roots, sensible defaults and a portable catalog."}
               </p>
             </div>
-            {["Library", "Inbox"].includes(area) && (
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  !settings?.roots.some((r) => r.role === "source" && r.online)
-                }
-                onClick={() =>
-                  run(async () => {
-                    const root = settings?.roots.find(
+            {["Library", "Inbox"].includes(area) &&
+              executionBackend === "windows-worker" && (
+                <button
+                  className="primary"
+                  onClick={() => navigate("Media review")}
+                >
+                  <Folder size={16} /> Add sample folder
+                </button>
+              )}
+            {["Library", "Inbox"].includes(area) &&
+              executionBackend !== "windows-worker" && (
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    !settings?.roots.some(
                       (r) => r.role === "source" && r.online,
-                    );
-                    if (root) {
-                      await api("/scan", { rootId: root.id });
-                      setNotice(
-                        "Read-only scan queued. Follow its progress in Jobs.",
+                    )
+                  }
+                  onClick={() =>
+                    run(async () => {
+                      const root = settings?.roots.find(
+                        (r) => r.role === "source" && r.online,
                       );
-                    }
-                  })
-                }
-              >
-                <Download size={16} /> Scan source
-              </button>
-            )}
+                      if (root) {
+                        await api("/scan", { rootId: root.id });
+                        setNotice(
+                          "Read-only scan queued. Follow its progress in Jobs.",
+                        );
+                      }
+                    })
+                  }
+                >
+                  <Download size={16} /> Scan source
+                </button>
+              )}
           </div>
           {error && (
             <div className="alert error" role="alert">
@@ -1016,7 +1028,9 @@ function App() {
               </div>
             </>
           )}
-          {area === "Media review" && <MediaReview rows={rows} />}
+          {area === "Media review" && (
+            <MediaReview rows={rows} refresh={() => void load()} />
+          )}
           {area === "Discs" && (
             <>
               <div className="disc-intro">

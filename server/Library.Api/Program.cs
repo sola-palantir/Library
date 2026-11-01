@@ -20,6 +20,8 @@ var databasePath = Path.Combine(options.DataPath, "catalog.db");
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<Storage>();
 builder.Services.AddSingleton<MediaInspectionService>();
+builder.Services.AddSingleton<ReadOnlyReview>();
+builder.Services.AddHostedService(services => services.GetRequiredService<ReadOnlyReview>());
 builder.Services.AddSingleton<SampleRemuxService>();
 builder.Services.AddDbContextFactory<Catalog>(b => b.UseSqlite($"Data Source={databasePath};Default Timeout=30"));
 builder.Services.AddSingleton<QBitIntegration>();
@@ -70,7 +72,8 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles(); app.UseStaticFiles();
 app.MapGet("/api/health", () => new { status = "ok", version = Library.Execution.ReleaseInfo.Version });
 app.MapDeployment();
-app.MapGet("/api/execution", () => new { backend = options.ExecutionBackend, workerConnected = false, localExecution = ExecutionMode.IsLocal(options), mediaTransfer = ExecutionMode.IsLocal(options) && options.EnableSampleHandoff, message = ExecutionMode.IsLocal(options) ? "Local Linux executor; requires qualified Linux storage." : "Windows worker connection is not configured. Catalog and imported reviews remain available; media jobs are paused." });
+app.MapReadOnlyReview();
+app.MapGet("/api/execution", (ReadOnlyReview review) => new { backend = options.ExecutionBackend, workerConnected = review.Connected, localExecution = ExecutionMode.IsLocal(options), mediaTransfer = ExecutionMode.IsLocal(options) && options.EnableSampleHandoff, message = ExecutionMode.IsLocal(options) ? "Local Linux executor; requires qualified Linux storage." : review.Connected ? "Temporary read-only sample worker connected. Encoding and file-changing jobs remain disabled." : "Windows worker connection is not configured. Catalog and imported reviews remain available; media jobs are paused." });
 app.MapGet("/api/settings", async (Catalog db) => new { preferences = await db.Settings.SingleAsync(), roots = storage.Roots.Select(r => new { r.Id, r.Label, r.ContainerPath, r.WindowsPath, r.Role, online = ExecutionMode.IsLocal(options) && Directory.Exists(r.ContainerPath) }) });
 app.MapPut("/api/settings", async (Setting value, Catalog db) =>
 {
@@ -98,14 +101,16 @@ app.MapPost("/api/scan", async (RootRequest request, Catalog db) =>
     var job = new Operation { Type = "scan", Payload = JobRunner.Encode(request.RootId) }; db.Jobs.Add(job); db.Audit("scan-queued", job.Id); await db.SaveChangesAsync(); return Results.Ok(job);
 });
 app.MapGet("/api/jobs", async (Catalog db) => await db.Jobs.OrderByDescending(x => x.CreatedUtc).Take(100).ToListAsync());
-app.MapPost("/api/jobs/{id}/cancel", async (string id, Catalog db) =>
+app.MapPost("/api/jobs/{id}/cancel", async (string id, Catalog db, ReadOnlyReview review, CancellationToken ct) =>
 {
+    if (await db.Jobs.AnyAsync(j => j.Id == id && j.Type == ReadOnlyReview.JobType, ct)) return Results.Ok(await review.Cancel(id, ct));
     var changed = await db.Jobs.Where(x => x.Id == id && (x.Status == "queued" || x.Status == "running")).ExecuteUpdateAsync(x => x.SetProperty(j => j.CancelRequested, true));
     if (changed == 0) throw new ArgumentException("Job is no longer cancellable.");
     db.Audit("cancel-requested", id); await db.SaveChangesAsync(); return Results.Ok();
 });
-app.MapPost("/api/jobs/{id}/retry", async (string id, Catalog db) =>
+app.MapPost("/api/jobs/{id}/retry", async (string id, Catalog db, ReadOnlyReview review, CancellationToken ct) =>
 {
+    if (await db.Jobs.AnyAsync(j => j.Id == id && j.Type == ReadOnlyReview.JobType, ct)) return Results.Ok(await review.Retry(id, ct));
     ExecutionMode.RequireLocal(options);
     await LimitQueue(db);
     var changed = await db.Jobs.Where(x => x.Id == id && (x.Status == "failed" || x.Status == "cancelled")).ExecuteUpdateAsync(x => x.SetProperty(j => j.Status, "queued").SetProperty(j => j.CancelRequested, false));

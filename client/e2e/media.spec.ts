@@ -1,6 +1,23 @@
 import { test, expect } from "@playwright/test";
 import { syntheticProbe } from "../src/mediaFixture";
 
+test("malformed scan status leaves imported media review usable", async ({
+  page,
+}) => {
+  await page.route("**/api/review-scan/jobs", (route) =>
+    route.fulfill({ json: {} }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Media review", exact: true }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "invalid status response" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Load synthetic example" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Technical inventory", exact: true }),
+  ).toBeVisible();
+});
+
 test("media review distinguishes synthetic evidence and resolves tracks without media mutations", async ({
   page,
 }) => {
