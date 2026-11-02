@@ -1,5 +1,6 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { localTime } from "./time";
 import {
   Archive,
   ArrowDownToLine,
@@ -1224,8 +1225,7 @@ function App() {
                       {statusLabel(job.type)} <Badge value={job.status} />
                     </strong>
                     <small>
-                      {new Date(job.createdUtc).toLocaleString()} ·{" "}
-                      {job.id.slice(0, 8)}{" "}
+                      {localTime(job.createdUtc)} · {job.id.slice(0, 8)}{" "}
                     </small>
                     <JobProgress job={job} stale={pollingFailed} />
                     {job.error && <p className="job-error">{job.error}</p>}

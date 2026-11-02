@@ -74,9 +74,11 @@ distinguish actual supplied-file/browser checks from unrun playback qualificatio
 
 The new [Windows worker Connect/Disconnect flow](docs/read-only-connection.md)
 supports explicit folder scope, bounded connections, cancellation, reconnect and
-revocation. It is implemented for a separately approved local authorization;
-**remembered access is not activated** in the existing preview. Connect cannot
-create credentials or renew expired access. Saved reviews remain accessible.
+revocation. It requires a separately approved local authorization; default bundles
+do not activate remembered access. Connect cannot create credentials or renew
+expired access. Saved reviews remain accessible. The
+[scan and timestamp regression report](docs/scan-regression-20261102.md) describes
+the private pilot repair, its preserved access limits and local-time checks.
 
 The detailed developer setup, automated tests, Wintermute-specific tooling and
 retained RF20 playback checklist are in the [developer guide](docs/development.md).

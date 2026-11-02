@@ -4,6 +4,18 @@ using Xunit;
 namespace Library.Companion.Tests;
 public class ReviewAccessTests
 {
+    [Fact] public void SlightlyFutureSessionWaitsWithoutStartingAccessEarlyOrExtendingExpiry()
+    {
+        var now = DateTimeOffset.UtcNow; var issued = now.AddMilliseconds(100);
+        var wait = ReviewConnectionClient.StartDelay(issued, now);
+        Assert.True(wait >= issued - now); Assert.True(wait <= TimeSpan.FromMilliseconds(101));
+        var config = new ReviewWorkerConfiguration("http://127.0.0.1:5090", Guid.NewGuid().ToString("N"), Path.GetFullPath("samples"), Path.GetFullPath("tools"), issued, issued.AddHours(1), true);
+        Assert.Throws<ArgumentException>(() => config.Validate(now));
+        config.Validate(now + wait);
+        Assert.Throws<ArgumentException>(() => config.Validate(config.ExpiresUtc));
+        Assert.Throws<IOException>(() => ReviewConnectionClient.StartDelay(now.AddSeconds(1).AddTicks(1), now));
+        Assert.Equal(TimeSpan.Zero, ReviewConnectionClient.StartDelay(now.AddTicks(-1), now));
+    }
     [Fact] public void ConnectionCannotExpandScopeLifetimeOrExpiry()
     {
         var now=DateTimeOffset.UtcNow; var profile=new ReviewConnectionProfile(Guid.NewGuid().ToString("N"),@"C:\synthetic\samples","http://127.0.0.1:5095",DerivedMedia.Digest(new string('a',64)),now.AddSeconds(-1),now.AddDays(1));

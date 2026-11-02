@@ -1,5 +1,9 @@
 # Read-only worker connection qualification - 2026-11-01
 
+This is the historical pre-activation qualification. The separately approved
+private pilot's current repair and verification are recorded in the
+[November 2 regression report](scan-regression-20261102.md).
+
 The preceding supplied-folder milestone was published as
 [`f76d3b8f6ec6876691a341c26e5a77b6792270fc`](https://github.com/sola-palantir/Library/commit/f76d3b8f6ec6876691a341c26e5a77b6792270fc).
 Its [exact-commit CI run](https://github.com/sola-palantir/Library/actions/runs/41350058677)

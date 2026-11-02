@@ -11,8 +11,7 @@ public sealed class ReadOnlyScanner(string rootPath, string toolsRoot)
     public async Task<ReviewScanResult> Scan(ReviewScanCommand command, CancellationToken cancellation)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native Windows inspection is required.");
-        var remaining = command.DeadlineUtc - DateTimeOffset.UtcNow;
-        if (remaining <= TimeSpan.Zero || remaining > TimeSpan.FromMinutes(3)) throw new ArgumentException("Invalid scan deadline.");
+        var remaining = ReviewScan.RuntimeBudget(command.DeadlineUtc, DateTimeOffset.UtcNow);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation); deadline.CancelAfter(remaining);
         var ct = deadline.Token;
         using var root = new Scope(rootPath);

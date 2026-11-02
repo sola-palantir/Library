@@ -104,6 +104,15 @@ public sealed class Catalog(DbContextOptions<Catalog> options) : DbContext(optio
         b.Entity<Asset>().HasOne<Edition>().WithMany().HasForeignKey(x => x.EditionId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<PhysicalCopy>().HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<Operation>().HasIndex(x => new { x.Status, x.CreatedUtc });
+        // These catalog columns have always stored UTC ticks. SQLite does not
+        // preserve DateTime.Kind; restore it on read so JSON includes Z. Do not
+        // shift historical values using the API machine's local timezone.
+        var utc = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
+            value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+            value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
+        foreach (var property in b.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
+            if (property.ClrType == typeof(DateTime) && property.Name.EndsWith("Utc", StringComparison.Ordinal))
+                property.SetValueConverter(utc);
     }
     public void Audit(string action, string detail) => History.Add(new() { Action = action, Detail = detail });
 }

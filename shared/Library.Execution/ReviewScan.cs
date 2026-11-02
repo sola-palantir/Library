@@ -8,6 +8,17 @@ public record ReviewScanFile(string RelativePath, FileObservation Observation, J
 public record ReviewScanResult(string Id, string SessionId, string RootId, ReviewScanFile[] Files, string ToolVersion);
 public static class ReviewScan
 {
+    public static readonly TimeSpan MaximumRuntime = TimeSpan.FromMinutes(3);
+    // API and worker use different OS clocks. Tolerance is for validating the
+    // command, never extra running time or an extension of an access/session grant.
+    public static TimeSpan RuntimeBudget(DateTimeOffset deadline, DateTimeOffset now)
+    {
+        var remaining = deadline - now;
+        if (remaining <= TimeSpan.Zero) throw new IOException("Read-only command rejected: deadline has already expired.");
+        if (remaining > MaximumRuntime + TimeSpan.FromSeconds(1))
+            throw new IOException($"Read-only command rejected: deadline is {remaining.TotalMilliseconds:F0} ms ahead of the Windows clock; maximum runtime is 180000 ms with 1000 ms clock tolerance. Check API/worker clock agreement.");
+        return remaining > MaximumRuntime ? MaximumRuntime : remaining;
+    }
     public const int MaxFiles = 8;
     public const int MaxResultBytes = 8 * 1024 * 1024;
     public static void Validate(ReviewScanResult result)

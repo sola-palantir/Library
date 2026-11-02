@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { localTime } from "./time";
 import { api, bytes } from "./types";
 import type { Row } from "./types";
 import {
@@ -107,7 +108,7 @@ export function MediaReview({
       );
       acceptProbe(
         result.probe,
-        `${result.evidence.cached ? "Saved native scan" : "Read-only"} observation of copy ${result.evidence.copyId} at ${result.evidence.observedUtc}. ${result.evidence.toolVersion}. Not a content-integrity check. Rescan to refresh.`,
+        `${result.evidence.cached ? "Saved native scan" : "Read-only"} observation of copy ${result.evidence.copyId} at ${localTime(result.evidence.observedUtc)}. ${result.evidence.toolVersion}. Not a content-integrity check. Rescan to refresh.`,
         result.evidence.cached ? null : result.evidence.copyId,
       );
     } catch (e) {

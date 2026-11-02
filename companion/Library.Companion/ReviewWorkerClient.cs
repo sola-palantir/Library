@@ -14,7 +14,9 @@ public record ReviewWorkerConfiguration(string ApiOrigin, string SessionId, stri
     {
         if (!Guid.TryParseExact(SessionId, "N", out _) || !Path.IsPathFullyQualified(Folder) || Folder.StartsWith("\\\\") || Path.GetPathRoot(Folder) == Folder || !Path.IsPathFullyQualified(ToolsRoot)) throw new ArgumentException("Explicit local review folder and verified tools required.");
         if (!Uri.TryCreate(ApiOrigin, UriKind.Absolute, out var uri) || uri.Scheme != "http" || uri.Host != "127.0.0.1" || ApiOrigin != uri.GetLeftPart(UriPartial.Authority)) throw new ArgumentException("Read-only worker connects only to the exact localhost API origin.");
-        if (ExpiresUtc <= now || now < IssuedUtc || ExpiresUtc <= IssuedUtc || ExpiresUtc - IssuedUtc > TimeSpan.FromMinutes(RememberedAccess ? 60 : 10)) throw new ArgumentException("Read-only session is expired or exceeds its bounded lifetime.");
+        if (ExpiresUtc <= now) throw new ArgumentException("Read-only session has expired; reconnect within the existing authorization.");
+        if (now < IssuedUtc) throw new ArgumentException($"Read-only session starts {(IssuedUtc - now).TotalMilliseconds:F0} ms ahead of the Windows clock; access has not started.");
+        if (ExpiresUtc <= IssuedUtc || ExpiresUtc - IssuedUtc > TimeSpan.FromMinutes(RememberedAccess ? 60 : 10)) throw new ArgumentException("Read-only session exceeds its bounded lifetime.");
     }
 }
 
@@ -48,10 +50,14 @@ public sealed class ReviewWorkerClient : IDisposable
         while ((count = await stream.ReadAsync(buffer, ct)) > 0) { if (result.Length + count > 65536) throw new IOException("Oversized read-only command response."); result.Write(buffer, 0, count); }
         return result.Length == 0 ? default : JsonSerializer.Deserialize<T>(result.ToArray(), ExecutionContract.Json);
     }
-    internal void ValidateCommand(ReviewScanCommand command)
+    internal TimeSpan ValidateCommand(ReviewScanCommand command, DateTimeOffset? observedUtc = null)
     {
-        if (!Guid.TryParseExact(command.Id, "N", out _) || command.SessionId != configuration.SessionId || command.RootId != configuration.RootId || command.DeadlineUtc > configuration.ExpiresUtc || command.DeadlineUtc <= DateTimeOffset.UtcNow || command.DeadlineUtc > DateTimeOffset.UtcNow.AddMinutes(3))
-            throw new IOException("API command differs from the locally scoped read-only session.");
+        var now = observedUtc ?? DateTimeOffset.UtcNow;
+        if (!Guid.TryParseExact(command.Id, "N", out _)) throw new IOException("Read-only command rejected: invalid job ID.");
+        if (command.SessionId != configuration.SessionId) throw new IOException("Read-only command rejected: session differs from the local connection.");
+        if (command.RootId != configuration.RootId) throw new IOException("Read-only command rejected: folder differs from the locally approved scope.");
+        if (command.DeadlineUtc > configuration.ExpiresUtc) throw new IOException("Read-only command rejected: deadline exceeds the local session expiry.");
+        return ReviewScan.RuntimeBudget(command.DeadlineUtc, now);
     }
     public async Task Run(CancellationToken cancellation)
     {
@@ -63,8 +69,17 @@ public sealed class ReviewWorkerClient : IDisposable
             {
                 var command = await Send<ReviewScanCommand>(HttpMethod.Get, "command", null, ct);
                 if (command == null) { await Task.Delay(500, ct); continue; }
-                ValidateCommand(command);
-                using var job = CancellationTokenSource.CreateLinkedTokenSource(ct); job.CancelAfter(command.DeadlineUtc - DateTimeOffset.UtcNow);
+                TimeSpan budget;
+                try { budget = ValidateCommand(command); }
+                catch (IOException e)
+                {
+                    // Only acknowledge an identifiable command within this connection's scope.
+                    // Never leave a rejected, claimed job looking active until its deadline.
+                    if (Guid.TryParseExact(command.Id, "N", out _) && command.SessionId == configuration.SessionId && command.RootId == configuration.RootId)
+                        await Send<JsonElement>(HttpMethod.Post, $"jobs/{command.Id}/failure", new { error = e.Message }, ct);
+                    throw;
+                }
+                using var job = CancellationTokenSource.CreateLinkedTokenSource(ct); job.CancelAfter(budget);
                 async Task Watch()
                 {
                     try

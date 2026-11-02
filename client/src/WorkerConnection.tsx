@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./types";
+import { localTime } from "./time";
 
 export type Connection = {
   configured: boolean;
@@ -13,7 +14,7 @@ export type Connection = {
   rememberedAccess: boolean;
 };
 const time = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Not authorized";
+  value ? localTime(value) : "Not authorized";
 
 export function WorkerConnection({
   connection,

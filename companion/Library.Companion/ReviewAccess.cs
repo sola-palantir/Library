@@ -85,6 +85,13 @@ public static class ReviewAccess
 
 public sealed class ReviewConnectionClient(ReviewAccessBundle bundle)
 {
+    internal static TimeSpan StartDelay(DateTimeOffset issuedUtc, DateTimeOffset now)
+    {
+        var delay = issuedUtc - now;
+        if (delay > TimeSpan.FromSeconds(1)) throw new IOException($"Read-only session starts {delay.TotalMilliseconds:F0} ms ahead of the Windows clock. Clock difference exceeds the 1000 ms connection wait; access has not started.");
+        // Round up so timer precision cannot wake us just before authorization begins.
+        return delay > TimeSpan.Zero ? TimeSpan.FromMilliseconds(Math.Ceiling(delay.TotalMilliseconds) + 1) : TimeSpan.Zero;
+    }
     internal static ReviewWorkerConfiguration Configuration(ReviewAccessBundle bundle, ReviewConnectionLease lease)
     {
         bundle.Profile.Validate();
@@ -110,6 +117,8 @@ public sealed class ReviewConnectionClient(ReviewAccessBundle bundle)
                 var connection = memory.Length == 0 ? null : JsonSerializer.Deserialize<ReviewConnectionLease>(memory.ToArray(), ExecutionContract.Json);
                 if (connection != null)
                 {
+                    var wait = StartDelay(connection.IssuedUtc, DateTimeOffset.UtcNow);
+                    if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
                     using var worker = new ReviewWorkerClient(Configuration(bundle, connection), bundle.Token);
                     try { await worker.Run(ct); }
                     catch (ReviewSessionEndedException) { /* Disconnect invalidates the session. Recheck profile/lease; never renew it. */ }
